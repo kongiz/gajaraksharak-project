@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Gajarakshak — Elephant Monitoring</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --bg:#f0f2f5;--surface:#fff;--surface2:#e8ecf0;
+  --border:#d0d7de;--border2:#bbc4ce;--text:#1a2332;--dim:#6b7a8d;
+  --accent:#0a6ebf;--accent-light:#e8f2ff;
+  --green:#1a8c4e;--green-bg:#e8f7ef;
+  --red:#c0392b;--red-bg:#fdecea;
+  --yellow:#b8860b;--yellow-bg:#fef9e7;
+  --orange:#d35400;
+  --shadow:0 1px 4px rgba(0,0,0,.10),0 2px 12px rgba(0,0,0,.06);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;min-height:100vh;overflow-x:hidden;}
+
+
+header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:52px;background:var(--surface);border-bottom:1.5px solid var(--border);box-shadow:var(--shadow);}
+.brand{display:flex;align-items:center;gap:10px;cursor:pointer;text-decoration:none;}
+/* ScopX logo in navbar */
+.brand-logo{display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.brand-logo svg{width:34px;height:34px;}
+.brand-divider{width:1.5px;height:28px;background:var(--border);flex-shrink:0;margin:0 2px;}
+.brand-name{font-size:.88rem;font-weight:700;letter-spacing:3px;color:var(--text);text-transform:uppercase;}
+.brand-sub{font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);letter-spacing:2px;}
+.hdr-right{display:flex;align-items:center;gap:10px;}
+.conn-pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border:1.5px solid;border-radius:20px;font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:1px;}
+.conn-pill.online{border-color:var(--green);background:var(--green-bg);color:var(--green);}
+.conn-pill.offline{border-color:var(--red);background:var(--red-bg);color:var(--red);}
+.conn-pill.connecting{border-color:var(--yellow);background:var(--yellow-bg);color:var(--yellow);}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:blink 2s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.clock-el{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--dim);}
+.back-btn{display:none;align-items:center;gap:6px;padding:5px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:.62rem;cursor:pointer;background:var(--surface);color:var(--text);font-weight:600;}
+.back-btn:hover{background:var(--surface2);}
+.back-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;}
+
+/* ── PAGES ── */
+.page{position:relative;z-index:1;display:none;height:calc(100vh - 52px);}
+.page.active{display:flex;}
+
+/* ══ FLEET PAGE ══ */
+#pageFleet{flex-direction:row;overflow:hidden;}
+.fleet-list{width:310px;min-width:260px;background:var(--surface);border-right:1.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
+.fleet-list-header{padding:11px 14px;border-bottom:1.5px solid var(--border);}
+.fleet-list-title{font-size:.58rem;font-weight:700;letter-spacing:3px;color:var(--dim);text-transform:uppercase;margin-bottom:5px;}
+.fleet-stats{display:flex;gap:12px;}
+.fstat{font-family:'IBM Plex Mono',monospace;font-size:.65rem;color:var(--text);}
+.fstat span{color:var(--accent);font-weight:600;}
+.elephant-list-scroll{flex:1;overflow-y:auto;}
+.elephant-list-scroll::-webkit-scrollbar{width:3px;}
+.elephant-list-scroll::-webkit-scrollbar-thumb{background:var(--border2);}
+.ecard{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;}
+.ecard:hover,.ecard.active-row{background:var(--accent-light);}
+.ecard.active-row{border-left:3px solid var(--accent);}
+.ecard-num{font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--dim);width:20px;text-align:right;flex-shrink:0;}
+.ecard-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:.44rem;font-weight:700;flex-shrink:0;border:2px solid;}
+.ecard-avatar.resting{background:var(--green-bg);border-color:var(--green);color:var(--green);}
+.ecard-avatar.moving{background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow);}
+.ecard-avatar.alert{background:var(--red-bg);border-color:var(--red);color:var(--red);}
+.ecard-avatar.offline{background:var(--surface2);border-color:var(--border2);color:var(--dim);}
+.ecard-info{flex:1;min-width:0;}
+.ecard-name{font-size:.75rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ecard-tag{font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);}
+.ecard-status{font-family:'IBM Plex Mono',monospace;font-size:.48rem;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0;}
+.ecard-status.resting{background:var(--green-bg);color:var(--green);}
+.ecard-status.moving{background:var(--yellow-bg);color:var(--yellow);}
+.ecard-status.alert{background:var(--red-bg);color:var(--red);}
+.ecard-status.offline{background:var(--surface2);color:var(--dim);}
+.fleet-map-right{flex:1;position:relative;overflow:hidden;}
+#fleetMap{width:100%;height:100%;}
+.map-overlay-bar{position:absolute;bottom:0;left:0;right:0;z-index:400;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-top:1px solid var(--border);display:flex;}
+.mob-item{flex:1;padding:7px 11px;border-right:1px solid var(--border);}
+.mob-item:last-child{border-right:none;}
+.mob-label{font-family:'IBM Plex Mono',monospace;font-size:.48rem;letter-spacing:2px;color:var(--dim);margin-bottom:2px;text-transform:uppercase;}
+.mob-val{font-family:'IBM Plex Mono',monospace;font-size:.75rem;color:var(--accent);font-weight:600;}
+.leaflet-container{background:#e0e8f0;}
+.pulse-dot{width:13px;height:13px;border-radius:50%;background:var(--accent);border:2px solid #fff;animation:ping 1.5s infinite;}
+.pulse-dot-alert{width:13px;height:13px;border-radius:50%;background:var(--red);border:2px solid #fff;animation:ping-r 1.5s infinite;}
+.pulse-dot-offline{width:11px;height:11px;border-radius:50%;background:var(--dim);border:2px solid #fff;opacity:.6;}
+@keyframes ping{0%,100%{box-shadow:0 0 0 3px rgba(10,110,191,.3)}50%{box-shadow:0 0 0 8px rgba(10,110,191,.05)}}
+@keyframes ping-r{0%,100%{box-shadow:0 0 0 3px rgba(192,57,43,.3)}50%{box-shadow:0 0 0 8px rgba(192,57,43,.05)}}
+
+/* ══ DETAIL PAGE ══ */
+#pageDetail{flex-direction:column;overflow:hidden;height:calc(100vh - 52px);}
+.detail-stat-bar{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1.5px solid var(--border);background:var(--surface);flex-shrink:0;}
+.dsb-item{padding:9px 14px;border-right:1px solid var(--border);position:relative;overflow:hidden;}
+.dsb-item:last-child{border-right:none;}
+.dsb-item::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;}
+.dsb-item:nth-child(1)::after{background:var(--yellow);}
+.dsb-item:nth-child(2)::after{background:var(--orange);}
+.dsb-item:nth-child(3)::after{background:#7c6fcd;}
+.dsb-item:nth-child(4)::after{background:var(--dim);}
+.dsb-label{font-family:'IBM Plex Mono',monospace;font-size:.44rem;letter-spacing:2.5px;color:var(--dim);text-transform:uppercase;margin-bottom:2px;}
+.dsb-val{font-family:'IBM Plex Mono',monospace;font-size:.88rem;font-weight:700;color:var(--text);line-height:1.1;}
+.dsb-sub{font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:var(--dim);margin-top:2px;}
+.detail-body{display:grid;grid-template-columns:340px 1fr;flex:1;overflow:hidden;min-height:0;}
+.detail-left{border-right:1.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--surface);}
+.detail-map-wrap{height:220px;flex-shrink:0;position:relative;border-bottom:1.5px solid var(--border);}
+#detailMap{width:100%;height:100%;}
+.map-coords{position:absolute;bottom:0;left:0;right:0;background:rgba(255,255,255,.9);backdrop-filter:blur(6px);display:flex;border-top:1px solid var(--border);z-index:400;}
+.mc-item{flex:1;padding:5px 9px;border-right:1px solid var(--border);}
+.mc-item:last-child{border-right:none;}
+.mc-label{font-family:'IBM Plex Mono',monospace;font-size:.42rem;letter-spacing:2px;color:var(--dim);margin-bottom:1px;text-transform:uppercase;}
+.mc-val{font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--accent);font-weight:600;}
+.sensor-panels{flex:1;overflow-y:auto;padding:10px;}
+.sensor-panels::-webkit-scrollbar{width:3px;}
+.sensor-panels::-webkit-scrollbar-thumb{background:var(--border2);}
+.sp{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:8px;box-shadow:var(--shadow);}
+.sp-head{display:flex;align-items:center;justify-content:space-between;padding:7px 11px;border-bottom:1px solid var(--border);background:var(--surface2);}
+.sp-title{font-size:.5rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--dim);}
+.sp-badge{font-family:'IBM Plex Mono',monospace;font-size:.46rem;padding:2px 6px;border-radius:4px;border:1px solid;font-weight:600;}
+.sp-body{padding:10px 12px;}
+.mv-row{display:flex;align-items:flex-start;gap:10px;}
+.mv-ring{width:52px;height:52px;border-radius:50%;border:2.5px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .4s;font-size:1.4rem;}
+.mv-ring.resting{border-color:var(--green);background:var(--green-bg);}
+.mv-ring.moving{border-color:var(--yellow);background:var(--yellow-bg);animation:mvRing 1s infinite;}
+.mv-ring.alert{border-color:var(--red);background:var(--red-bg);animation:mvAlert .5s infinite;}
+@keyframes mvRing{0%,100%{box-shadow:0 0 0 0 rgba(184,134,11,.15)}50%{box-shadow:0 0 0 8px rgba(184,134,11,0)}}
+@keyframes mvAlert{0%,100%{box-shadow:0 0 0 0 rgba(192,57,43,.2)}50%{box-shadow:0 0 0 10px rgba(192,57,43,0)}}
+.mv-info{flex:1;}
+.mv-state{font-family:'IBM Plex Mono',monospace;font-size:.85rem;font-weight:700;letter-spacing:1px;}
+.mv-state.resting{color:var(--green);}
+.mv-state.moving{color:var(--yellow);}
+.mv-state.alert{color:var(--red);}
+.mv-mag{font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);margin-top:2px;}
+.ax-rows{margin-top:8px;display:flex;flex-direction:column;gap:5px;}
+.ax-row{display:flex;align-items:center;gap:6px;}
+.ax-lbl{font-family:'IBM Plex Mono',monospace;font-size:.52rem;width:12px;color:var(--dim);font-weight:600;}
+.ax-track{flex:1;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;border:1px solid var(--border);}
+.ax-fill{height:100%;border-radius:3px;transition:width .35s ease;min-width:2px;}
+.ax-x{background:linear-gradient(90deg,#e74c3c,#c0392b);}
+.ax-y{background:linear-gradient(90deg,#2980b9,#1a6fa8);}
+.ax-z{background:linear-gradient(90deg,#8e44ad,#7d3c98);}
+.ax-val{font-family:'IBM Plex Mono',monospace;font-size:.52rem;width:42px;text-align:right;color:var(--text);}
+.sound-row{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;}
+.sound-big{font-family:'IBM Plex Mono',monospace;font-size:1.4rem;color:var(--text);line-height:1;font-weight:600;}
+.sound-track{width:100%;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;border:1px solid var(--border);margin-top:4px;}
+.sound-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--green),var(--yellow),var(--red));transition:width .4s;}
+.detail-right{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);}
+.cam-section-head{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--surface);border-bottom:1.5px solid var(--border);flex-shrink:0;}
+.csh-title{font-size:.52rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--dim);}
+.csh-badge{font-family:'IBM Plex Mono',monospace;font-size:.46rem;padding:2px 7px;border-radius:5px;border:1px solid var(--accent);background:var(--accent-light);color:var(--accent);font-weight:600;}
+.live-feed-row{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1.5px solid var(--border);flex-shrink:0;background:var(--surface);}
+.live-cam{position:relative;aspect-ratio:16/10;overflow:hidden;border-right:1px solid var(--border);}
+.live-cam:last-child{border-right:none;}
+.live-cam img{width:100%;height:100%;object-fit:cover;display:block;}
+.live-cam canvas.wm-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+.live-cam-no{display:flex;width:100%;height:100%;align-items:center;justify-content:center;flex-direction:column;gap:5px;background:#c8d0d8;color:var(--dim);}
+.live-cam-no svg{width:22px;height:22px;opacity:.4;}
+.cam-overlay-id{position:absolute;top:5px;left:6px;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:.44rem;color:#fff;}
+.cam-overlay-ts{position:absolute;top:5px;right:6px;background:rgba(0,0,0,.6);padding:2px 6px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:.4rem;color:#fff;}
+.cam-live-badge{position:absolute;bottom:5px;left:6px;background:var(--red);padding:2px 5px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:#fff;font-weight:700;display:flex;align-items:center;gap:3px;}
+.cam-live-dot{width:5px;height:5px;border-radius:50%;background:#fff;animation:blink 1s infinite;}
+.cam-corner{position:absolute;width:8px;height:8px;border-color:rgba(255,255,255,.6);border-style:solid;}
+.cam-tl{top:3px;left:3px;border-width:1.5px 0 0 1.5px;}
+.cam-tr{top:3px;right:3px;border-width:1.5px 1.5px 0 0;}
+.cam-bl{bottom:3px;left:3px;border-width:0 0 1.5px 1.5px;}
+.cam-br{bottom:3px;right:3px;border-width:0 1.5px 1.5px 0;}
+.cam-history-wrap{flex:1;overflow-y:auto;padding:10px 12px;}
+.cam-history-wrap::-webkit-scrollbar{width:3px;}
+.cam-history-wrap::-webkit-scrollbar-thumb{background:var(--border2);}
+.hist-group{margin-bottom:14px;}
+.hist-group-label{font-family:'IBM Plex Mono',monospace;font-size:.46rem;letter-spacing:2.5px;text-transform:uppercase;color:var(--dim);margin-bottom:7px;display:flex;align-items:center;gap:8px;}
+.hist-group-label::after{content:'';flex:1;height:1px;background:var(--border);}
+.hist-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.hist-thumb{position:relative;border-radius:6px;overflow:hidden;border:1.5px solid var(--border);aspect-ratio:16/10;cursor:pointer;transition:border-color .15s,transform .15s;}
+.hist-thumb:hover{border-color:var(--accent);transform:scale(1.02);}
+.hist-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.hist-thumb-id{position:absolute;top:4px;left:5px;background:rgba(0,0,0,.6);padding:1px 5px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:#fff;}
+.hist-thumb-ts{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);padding:2px 5px;font-family:'IBM Plex Mono',monospace;font-size:.4rem;color:#fff;}
+.badge-green{background:var(--green-bg);border-color:var(--green);color:var(--green);}
+.badge-red{background:var(--red-bg);border-color:var(--red);color:var(--red);}
+.badge-yellow{background:var(--yellow-bg);border-color:var(--yellow);color:var(--yellow);}
+.badge-purple{background:#f0eeff;border-color:#7c6fcd;color:#5b4fcf;}
+.badge-blue{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
+
+/* ══ SPEED GRAPH ══ */
+.speed-graph-wrap{padding:8px 12px 10px;}
+.speed-graph-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.speed-cur{font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:var(--accent);}
+.speed-unit{font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:var(--dim);margin-left:3px;}
+.speed-range{font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:var(--dim);}
+#speedCanvas{width:100%;height:52px;display:block;border-radius:4px;}
+
+::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:var(--border2);}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="brand" href="#" onclick="showFleet();return false;">
+    <div class="brand-logo">
+      <img src="image.png" alt="ScopX" style="width:38px;height:38px;object-fit:contain;">
+    </div>
+    <div class="brand-divider"></div>
+    <div>
+      <div class="brand-name">Gajarakshak Nirixana</div>
+      <div class="brand-sub">ELEPHANT TELEMETRY SYSTEM · SCOPX INTERACTIVE SYSTEMS</div>
+    </div>
+  </a>
+  <div class="hdr-right">
+    <button class="back-btn" id="backBtn" onclick="showFleet()">
+      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>FLEET VIEW
+    </button>
+    <span class="clock-el" id="clockEl">--:--:--</span>
+    <div class="conn-pill connecting" id="connPill"><div class="dot"></div><span id="connLabel">CONNECTING</span></div>
+  </div>
+</header>
+
+<!-- ══ FLEET PAGE ══ -->
+<div class="page active" id="pageFleet">
+  <div class="fleet-list">
+    <div class="fleet-list-header">
+      <div class="fleet-list-title">Fleet Overview</div>
+      <div class="fleet-stats">
+        <div class="fstat">Tracked <span id="fleetCount">—</span></div>
+        <div class="fstat">Alerts <span id="fleetAlerts" style="color:var(--green)">0</span></div>
+        <div class="fstat">Sync <span id="fleetSync">—</span></div>
+      </div>
+    </div>
+    <div class="elephant-list-scroll" id="elephantListScroll">
+      <div style="padding:20px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--dim);">Loading elephants…</div>
+    </div>
+  </div>
+  <div class="fleet-map-right">
+    <div id="fleetMap"></div>
+    <div class="map-overlay-bar">
+      <div class="mob-item"><div class="mob-label">Tracked</div><div class="mob-val" id="mapTracked">—</div></div>
+      <div class="mob-item"><div class="mob-label">GPS Fix</div><div class="mob-val" id="mapGps">—</div></div>
+      <div class="mob-item"><div class="mob-label">Alerts</div><div class="mob-val" id="mapAlerts" style="color:var(--green)">0</div></div>
+      <div class="mob-item"><div class="mob-label">Region</div><div class="mob-val">AHMEDABAD</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DETAIL PAGE ══ -->
+<div class="page" id="pageDetail">
+  <div class="detail-stat-bar">
+    <div class="dsb-item">
+      <div class="dsb-label">Movement</div>
+      <div class="dsb-val" id="d-mvstat">—</div>
+      <div class="dsb-sub" id="d-mvmag">mag: — m/s²</div>
+    </div>
+    <div class="dsb-item">
+      <div class="dsb-label">Sound Level</div>
+      <div class="dsb-val" id="d-soundstat">—</div>
+      <div class="dsb-sub" id="d-sounddb">— dB est.</div>
+    </div>
+    <div class="dsb-item">
+      <div class="dsb-label">Altitude</div>
+      <div class="dsb-val" id="d-altstat">—</div>
+      <div class="dsb-sub">GPS elevation</div>
+    </div>
+    <div class="dsb-item">
+      <div class="dsb-label">Last Update</div>
+      <div class="dsb-val" id="d-laststat" style="font-size:.7rem;">—</div>
+      <div class="dsb-sub" id="d-devicename">from collar unit</div>
+    </div>
+  </div>
+  <div class="detail-body">
+    <div class="detail-left">
+      <div class="detail-map-wrap">
+        <div id="detailMap"></div>
+        <div class="map-coords">
+          <div class="mc-item"><div class="mc-label">Lat</div><div class="mc-val" id="d-lat">—</div></div>
+          <div class="mc-item"><div class="mc-label">Lng</div><div class="mc-val" id="d-lng">—</div></div>
+          <div class="mc-item"><div class="mc-label">Track pts</div><div class="mc-val" id="d-pts">0</div></div>
+        </div>
+      </div>
+      <div class="sensor-panels">
+        <div class="sp">
+          <div class="sp-head"><span class="sp-title">Elephant Status</span><span class="sp-badge badge-blue">m/s²</span></div>
+          <div class="sp-body">
+            <div class="mv-row">
+              <div class="mv-ring resting" id="d-mvring">💤</div>
+              <div class="mv-info">
+                <div class="mv-state resting" id="d-mvlabel">WAITING</div>
+                <div class="mv-mag" id="d-mvmagsmall">Magnitude: — m/s²</div>
+              </div>
+            </div>
+            <div class="ax-rows">
+              <div class="ax-row"><div class="ax-lbl">X</div><div class="ax-track"><div class="ax-fill ax-x" id="d-ax" style="width:50%"></div></div><div class="ax-val" id="d-axv">—</div></div>
+              <div class="ax-row"><div class="ax-lbl">Y</div><div class="ax-track"><div class="ax-fill ax-y" id="d-ay" style="width:50%"></div></div><div class="ax-val" id="d-ayv">—</div></div>
+              <div class="ax-row"><div class="ax-lbl">Z</div><div class="ax-track"><div class="ax-fill ax-z" id="d-az" style="width:50%"></div></div><div class="ax-val" id="d-azv">—</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ══ SPEED GRAPH replaces old Speed Indicator ══ -->
+        <div class="sp">
+          <div class="sp-head"><span class="sp-title">Speed Indicator</span><span class="sp-badge badge-purple">rad/s · live</span></div>
+          <div class="speed-graph-wrap">
+            <div class="speed-graph-head">
+              <div>
+                <span class="speed-cur" id="d-speedCur">0.00</span>
+                <span class="speed-unit">rad/s mag</span>
+              </div>
+              <span class="speed-range" id="d-speedRange">60 s window</span>
+            </div>
+            <canvas id="speedCanvas" height="52"></canvas>
+          </div>
+        </div>
+
+        <div class="sp">
+          <div class="sp-head"><span class="sp-title">Noise Level Indicator</span><span class="sp-badge badge-yellow">HW484</span></div>
+          <div class="sp-body">
+            <div class="sound-row">
+              <span class="sound-big" id="d-soundbig">—</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">/ 4095 ADC</span>
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--orange);margin-left:auto;" id="d-sounddbsp">— dB</span>
+            </div>
+            <div class="sound-track"><div class="sound-fill" id="d-soundbar" style="width:0%"></div></div>
+            <div style="display:flex;justify-content:space-between;margin-top:3px;font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:var(--dim);"><span>SILENT</span><span>LOUD</span></div>
+          </div>
+        </div>
+        <div class="sp">
+          <div class="sp-head"><span class="sp-title">GPS · Altitude &amp; Fix</span><span class="sp-badge badge-green" id="d-gpsfix">GPS FIX</span></div>
+          <div class="sp-body" style="display:flex;gap:20px;">
+            <div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--text);line-height:1;" id="d-altbig">—</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:.44rem;color:var(--dim);margin-top:2px;">metres ASL</div>
+            </div>
+            <div style="border-left:1px solid var(--border);padding-left:20px;">
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:.48rem;color:var(--dim);margin-bottom:3px;">GPS STATUS</div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:.9rem;font-weight:700;color:var(--accent);" id="d-gpsvalid">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-right">
+      <div class="cam-section-head">
+        <span class="csh-title" id="d-camtitle">Live Camera Feed · 3-Cam Array</span>
+        <span class="csh-badge" id="camBadge">● LIVE</span>
+      </div>
+      <div class="live-feed-row" id="d-liveCams">
+        <div class="live-cam"><div class="live-cam-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="4"/></svg></div></div>
+        <div class="live-cam"><div class="live-cam-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="4"/></svg></div></div>
+        <div class="live-cam"><div class="live-cam-no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="4"/></svg></div></div>
+      </div>
+      <div class="cam-history-wrap" id="d-history">
+        <div style="padding:20px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--dim);">Select an elephant to view camera history</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+// Server URL (adjust if backend is hosted elsewhere)
+const SERVER = 'http://localhost:3000';
+
+// Global state
+let fleetData       = [];
+let currentKey      = null;
+let detailSse       = null;
+let fleetSse        = null;
+let fleetSseRetry   = null;
+let fleetMap        = null;
+let fleetMarkers    = {};
+let detailMap       = null;
+let detailMarker    = null;
+let detailTrack     = null;
+let detailPts       = [];
+let detailFrames    = { 0: null, 1: null, 2: null };
+let detailHistory   = [];
+
+
+// SPEED GRAPH — maintain a rolling history of gyro magnitudes and draw on canvas
+const SPEED_MAX_PTS = 60;
+let speedHistory = [];  // array of gyro magnitudes
+
+function pushSpeedPoint(gx, gy, gz) {
+  const mag = Math.sqrt((+gx)**2 + (+gy)**2 + (+gz)**2);
+  speedHistory.push(mag);
+  if (speedHistory.length > SPEED_MAX_PTS) speedHistory.shift();
+  document.getElementById('d-speedCur').textContent = mag.toFixed(2);
+  drawSpeedGraph();
+}
+
+function drawSpeedGraph() {
+  const canvas = document.getElementById('speedCanvas');
+  if (!canvas) return;
+
+  // Ensure canvas pixel size matches CSS size
+  const rect = canvas.getBoundingClientRect();
+  const W = Math.max(rect.width || 280, 100);
+  const H = 52;
+  canvas.width  = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  // Background
+  ctx.fillStyle = '#e8ecf0';
+  ctx.fillRect(0, 0, W, H);
+
+  const pts = speedHistory;
+  if (pts.length < 2) {
+    // placeholder text
+    ctx.fillStyle = '#6b7a8d';
+    ctx.font = `${10 * devicePixelRatio / devicePixelRatio}px IBM Plex Mono, monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Waiting for data…', W / 2, H / 2 + 4);
+    return;
+  }
+
+  const maxVal = Math.max(...pts, 0.5);
+  const padT = 6, padB = 6, padL = 4, padR = 4;
+  const gW = W - padL - padR;
+  const gH = H - padT - padB;
+
+  // Grid line at midpoint
+  const midY = padT + gH / 2;
+  ctx.beginPath();
+  ctx.moveTo(padL, midY);
+  ctx.lineTo(W - padR, midY);
+  ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + gH);
+  grad.addColorStop(0, 'rgba(10,110,191,0.35)');
+  grad.addColorStop(1, 'rgba(10,110,191,0.03)');
+
+  const xStep = gW / (SPEED_MAX_PTS - 1);
+
+  // Build path
+  ctx.beginPath();
+  pts.forEach((v, i) => {
+    const x = padL + i * xStep;
+    const y = padT + gH - (v / maxVal) * gH;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+
+  // Fill area
+  const lastX = padL + (pts.length - 1) * xStep;
+  ctx.lineTo(lastX, padT + gH);
+  ctx.lineTo(padL, padT + gH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Stroke line
+  ctx.beginPath();
+  pts.forEach((v, i) => {
+    const x = padL + i * xStep;
+    const y = padT + gH - (v / maxVal) * gH;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = '#0a6ebf';
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Dot at last point
+  const lx = padL + (pts.length - 1) * xStep;
+  const lv = pts[pts.length - 1];
+  const ly = padT + gH - (lv / maxVal) * gH;
+  ctx.beginPath();
+  ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#0a6ebf';
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Range label update
+  document.getElementById('d-speedRange').textContent =
+    `${pts.length}s · max ${maxVal.toFixed(2)} r/s`;
+}
+
+// Init graph on page load with demo idle line
+window.addEventListener('load', () => { drawSpeedGraph(); });
+
+// Watermark image (ScopX logo) as SVG data URI
+const WM_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <polygon points="100,8 185,55 185,145 100,192 15,145 15,55" fill="rgba(0,0,0,0.55)"/>
+  <polyline points="68,38 100,20 132,38" fill="none" stroke="#cc1f1f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="68,162 100,180 132,162" fill="none" stroke="#cc1f1f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="82" cy="95" rx="16" ry="18" fill="none" stroke="white" stroke-width="5"/>
+  <ellipse cx="118" cy="95" rx="16" ry="18" fill="none" stroke="white" stroke-width="5"/>
+  <circle cx="82" cy="95" r="7" fill="white"/>
+  <circle cx="118" cy="95" r="7" fill="white"/>
+  <line x1="70" y1="77" x2="93" y2="82" stroke="white" stroke-width="4.5" stroke-linecap="round"/>
+  <line x1="130" y1="77" x2="107" y2="82" stroke="white" stroke-width="4.5" stroke-linecap="round"/>
+  <polygon points="100,108 92,120 108,120" fill="white"/>
+</svg>`;
+
+let wmImage = null;
+function getWmImage(cb) {
+  if (wmImage) { cb(wmImage); return; }
+  const img = new Image();
+  img.onload = () => { wmImage = img; cb(img); }
+  img.src = 'image.png';  
+}
+
+// Apply watermark to live feed containers (canvas overlay approach)
+function applyWatermarkToContainer(container) {
+  // Remove old watermark canvas if any
+  const old = container.querySelector('canvas.wm-canvas');
+  if (old) old.remove();
+
+  const img = container.querySelector('img');
+  if (!img) return;
+
+  getWmImage(wm => {
+    const cvs = document.createElement('canvas');
+    cvs.className = 'wm-canvas';
+
+    // Size to match the container
+    const w = container.offsetWidth  || 200;
+    const h = container.offsetHeight || 125;
+    cvs.width  = w;
+    cvs.height = h;
+
+    const ctx = cvs.getContext('2d');
+
+    // Logo size & position: bottom-right
+    const logoSize = Math.round(Math.min(w, h) * 0.12);
+    const pad      = 6;
+    const lx       = w - logoSize - pad;
+    const ly       = h - logoSize - pad;
+
+    ctx.globalAlpha = 0.65;
+    ctx.drawImage(wm, lx, ly, logoSize, logoSize);
+
+    // "SCOPX" text label just above logo
+    ctx.globalAlpha = 0.75;
+    ctx.font        = `bold ${Math.round(logoSize * 0.12)}px IBM Plex Mono, monospace`;
+    ctx.fillStyle   = '#ffffff';
+    ctx.textAlign   = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('SCOPX', w - pad, h - logoSize - pad - 1);
+
+    container.appendChild(cvs);
+  });
+}
+
+// Also watermark history thumbnails (canvas overlay approach)
+function applyWatermarkToImg(imgEl) {
+  // For thumbnails, wrap with a relative container if not already
+  const parent = imgEl.closest('.hist-thumb');
+  if (!parent) return;
+
+  const old = parent.querySelector('canvas.wm-canvas');
+  if (old) old.remove();
+
+  getWmImage(wm => {
+    const w = parent.offsetWidth  || 120;
+    const h = parent.offsetHeight || 75;
+
+    const cvs = document.createElement('canvas');
+    cvs.className = 'wm-canvas';
+    cvs.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+    cvs.width  = w;
+    cvs.height = h;
+
+    const ctx = cvs.getContext('2d');
+    const logoSize = Math.round(Math.min(w, h) * 0.12);
+    const pad = 4;
+    ctx.globalAlpha = 0.6;
+    ctx.drawImage(wm, w - logoSize - pad, h - logoSize - pad, logoSize, logoSize);
+
+    parent.appendChild(cvs);
+  });
+}
+
+
+// Clock update every second
+setInterval(() => {
+  document.getElementById('clockEl').textContent =
+    new Date().toLocaleTimeString('en-GB');
+}, 1000);
+
+// Connection status update
+function setConn(state) {
+  const pill  = document.getElementById('connPill');
+  const label = document.getElementById('connLabel');
+  pill.className = `conn-pill ${state}`;
+  label.textContent = { online:'LIVE', offline:'OFFLINE', connecting:'CONNECTING' }[state] || 'CONNECTING';
+}
+
+// Initial boot sequence: load fleet data, then init map and SSE
+async function boot() {
+  setConn('connecting');
+  await loadFleet();
+  // Defer so #fleetMap has layout before Leaflet measures it
+  setTimeout(() => {
+    initFleetMap();
+    openFleetSse();
+  }, 0);
+}
+
+// ────────────────────────────────────────────
+//  Fleet
+// ────────────────────────────────────────────
+async function loadFleet() {
+  try {
+    const res = await fetch(`${SERVER}/api/fleet`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    fleetData = await res.json();
+    renderList();
+    // updateFleetMapMarkers();
+    document.getElementById('fleetSync').textContent = new Date().toLocaleTimeString('en-GB');
+    setConn('online');
+  } catch (err) {
+    console.error('[fleet] load failed:', err.message);
+    setConn('offline');
+    document.getElementById('elephantListScroll').innerHTML =
+      `<div style="padding:20px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--red);">
+        Cannot reach server.<br>${err.message}
+       </div>`;
+  }
+}
+
+function openFleetSse() {
+  if (fleetSse) { fleetSse.close(); fleetSse = null; }
+  clearTimeout(fleetSseRetry);
+  fleetSse = new EventSource(`${SERVER}/events`);
+  fleetSse.onopen = () => setConn('online');
+  fleetSse.addEventListener('update', e => {
+    try {
+      const { reading, deviceId } = JSON.parse(e.data);
+      if (!reading || !deviceId) return;
+      const idx = fleetData.findIndex(el => el.id === deviceId);
+      if (idx === -1) return;
+      fleetData[idx] = { ...fleetData[idx], ...reading };
+      updateListRow(idx);
+      updateFleetMarker(fleetData[idx]);
+      document.getElementById('fleetSync').textContent = new Date().toLocaleTimeString('en-GB');
+      if (currentKey && fleetData[idx].device_key === currentKey) applyReading(reading);
+    } catch {}
+  });
+  fleetSse.addEventListener('alert', e => {
+    try {
+      const cur = parseInt(document.getElementById('fleetAlerts').textContent) || 0;
+      document.getElementById('fleetAlerts').textContent = cur + 1;
+      document.getElementById('fleetAlerts').style.color = 'var(--red)';
+      document.getElementById('mapAlerts').textContent = cur + 1;
+      document.getElementById('mapAlerts').style.color = 'var(--red)';
+    } catch {}
+  });
+  fleetSse.onerror = () => {
+    setConn('offline');
+    fleetSse.close();
+    fleetSse = null;
+    fleetSseRetry = setTimeout(openFleetSse, 5000);
+  };
+}
+
+// ────────────────────────────────────────────
+//  Render list
+// ────────────────────────────────────────────
+function movementInfo(r) {
+  if (!r || r.accel_mag == null) return { state: 'offline', label: 'OFFLINE', icon: '—' };
+  const mag = +r.accel_mag;
+  if (mag > 25)   return { state: 'alert',   label: 'IMPACT',  icon: '⚡' };
+  if (mag > 10.2) return { state: 'moving',  label: 'MOVING',  icon: '🐘' };
+  return              { state: 'resting', label: 'STOPPED', icon: '💤' };
+}
+
+function renderList() {
+  const scroll = document.getElementById('elephantListScroll');
+  let alerts = 0, gpsLocked = 0;
+  scroll.innerHTML = fleetData.map((e, i) => {
+    const mv = movementInfo(e);
+    if (mv.state === 'alert') alerts++;
+    if (e.gps_valid) gpsLocked++;
+    const coords = (e.lat && e.lng)
+      ? `${(+e.lat).toFixed(4)}, ${(+e.lng).toFixed(4)}`
+      : 'No GPS fix';
+    return `<div class="ecard${currentKey === e.device_key ? ' active-row' : ''}"
+                 data-key="${e.device_key}" onclick="showDetail('${e.device_key}')">
+      <div class="ecard-num">${i + 1}</div>
+      <div class="ecard-avatar ${mv.state}">${e.tag || e.device_key.slice(-2)}</div>
+      <div class="ecard-info">
+        <div class="ecard-name">${e.name}</div>
+        <div class="ecard-tag">${coords}</div>
+      </div>
+      <div class="ecard-status ${mv.state}">${mv.label}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('fleetCount').textContent  = fleetData.length;
+  document.getElementById('fleetAlerts').textContent = alerts;
+  document.getElementById('fleetAlerts').style.color = alerts > 0 ? 'var(--red)' : 'var(--green)';
+  document.getElementById('mapTracked').textContent  = fleetData.length;
+  document.getElementById('mapGps').textContent      = `${gpsLocked}/${fleetData.length}`;
+  document.getElementById('mapAlerts').textContent   = alerts;
+  document.getElementById('mapAlerts').style.color   = alerts > 0 ? 'var(--red)' : 'var(--green)';
+}
+
+function updateListRow(idx) {
+  const e   = fleetData[idx];
+  const mv  = movementInfo(e);
+  const row = document.querySelector(`.ecard[data-key="${e.device_key}"]`);
+  if (!row) return;
+  const coords = (e.lat && e.lng)
+    ? `${(+e.lat).toFixed(4)}, ${(+e.lng).toFixed(4)}`
+    : 'No GPS fix';
+  row.querySelector('.ecard-avatar').className = `ecard-avatar ${mv.state}`;
+  row.querySelector('.ecard-tag').textContent  = coords;
+  row.querySelector('.ecard-status').className = `ecard-status ${mv.state}`;
+  row.querySelector('.ecard-status').textContent = mv.label;
+}
+
+// ────────────────────────────────────────────
+//  Fleet Map
+// ────────────────────────────────────────────
+function initFleetMap() {
+  fleetMap = L.map('fleetMap', { zoomControl: true, attributionControl: false })
+              .setView([23.0225, 72.5714], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 })
+   .addTo(fleetMap);
+  fleetData.forEach(e => addFleetMarker(e));
+}
+
+function markerHtml(state) {
+  const cls = state === 'alert' ? 'pulse-dot-alert'
+            : state === 'offline' ? 'pulse-dot-offline'
+            : 'pulse-dot';
+  return `<div class="${cls}"></div>`;
+}
+
+function addFleetMarker(e) {
+    if(!fleetMap) return;
+  if (!e.lat || !e.lng) return;
+  const mv   = movementInfo(e);
+  const icon = L.divIcon({ className: '', html: markerHtml(mv.state), iconSize: [13,13], iconAnchor: [6,6] });
+  fleetMarkers[e.device_key] = L.marker([+e.lat, +e.lng], { icon })
+    .addTo(fleetMap)
+    .bindTooltip(`<b>${e.name}</b> ${e.tag}`, { permanent: false, direction: 'top' })
+    .on('click', () => showDetail(e.device_key));
+}
+
+function updateFleetMarker(e) {
+    if(!fleetMap) return;
+  if (!e.lat || !e.lng) return;
+  if (!fleetMarkers[e.device_key]) { addFleetMarker(e); return; }
+  const mv   = movementInfo(e);
+  const icon = L.divIcon({ className: '', html: markerHtml(mv.state), iconSize: [13,13], iconAnchor: [6,6] });
+  fleetMarkers[e.device_key].setLatLng([+e.lat, +e.lng]).setIcon(icon);
+}
+
+function updateFleetMapMarkers() {
+  fleetData.forEach(e => updateFleetMarker(e));
+}
+
+// ────────────────────────────────────────────
+//  Pages
+// ────────────────────────────────────────────
+function showFleet() {
+  currentKey = null;
+  if (detailSse) { detailSse.close(); detailSse = null; }
+  document.getElementById('pageFleet').classList.add('active');
+  document.getElementById('pageDetail').classList.remove('active');
+  document.getElementById('backBtn').style.display = 'none';
+  setTimeout(() => { if (fleetMap) fleetMap.invalidateSize(); }, 100);
+}
+
+async function showDetail(key) {
+  currentKey = key;
+  document.querySelectorAll('.ecard').forEach(r => {
+    r.classList.toggle('active-row', r.dataset.key === key);
+  });
+  document.getElementById('pageFleet').classList.remove('active');
+  document.getElementById('pageDetail').classList.add('active');
+  document.getElementById('backBtn').style.display = 'flex';
+
+  detailFrames  = { 0: null, 1: null, 2: null };
+  detailHistory = [];
+  detailPts     = [];
+  speedHistory  = [];
+  drawSpeedGraph();
+
+ if (detailMap) { detailMap.remove(); detailMap = null; detailMarker = null; detailTrack = null; }
+// Give the DOM a tick to make #detailMap visible before Leaflet touches it
+  await new Promise(r => setTimeout(r, 50));
+
+  const e = fleetData.find(e => e.device_key === key);
+  if (e) {
+    setTxt('d-devicename', `${e.name} · ${e.tag}`);
+    setTxt('d-camtitle', `Live Camera Feed · ${e.name}`);
+  }
+
+  try {
+    const res = await fetch(`${SERVER}/api/elephant/${key}/latest`);
+    if (res.ok) {
+      const { reading, frames } = await res.json();
+      if (reading) applyReading(reading);
+      if (frames)  frames.forEach(f => {
+        detailFrames[f.cam_id] = { url: SERVER + f.url, ts: fmtTs(f.ts) };
+      });
+      renderDetailCams();
+    }
+  } catch (err) { console.warn('[detail] load failed:', err.message); }
+
+  try {
+    const res = await fetch(`${SERVER}/api/elephant/${key}/track`);
+    if (res.ok) {
+      const pts = await res.json();
+      detailPts = pts.filter(p => p.lat && p.lng).map(p => [+p.lat, +p.lng]);
+      setTxt('d-pts', detailPts.length);
+    }
+  } catch {}
+
+  openDetailSse(key);
+}
+
+// ────────────────────────────────────────────
+//  Detail SSE
+// ────────────────────────────────────────────
+function openDetailSse(key) {
+  if (detailSse) { detailSse.close(); detailSse = null; }
+  detailSse = new EventSource(`${SERVER}/events/${key}`);
+  detailSse.addEventListener('update', e => {
+    try {
+      const { reading, frames } = JSON.parse(e.data);
+      if (reading) applyReading(reading);
+      if (frames && frames.length) {
+        const ts = new Date().toLocaleTimeString('en-GB');
+        frames.forEach(f => {
+          const url = f.url.startsWith('http') ? f.url : SERVER + f.url;
+          detailFrames[f.camId] = { url, ts };
+        });
+        renderDetailCams();
+        pushDetailHistory(frames, ts);
+      }
+    } catch {}
+  });
+  detailSse.addEventListener('alert', e => {
+    document.getElementById('d-mvstat').style.color = 'var(--red)';
+    setTimeout(() => document.getElementById('d-mvstat').style.color = '', 2000);
+  });
+  detailSse.onerror = () => {
+    detailSse.close();
+    detailSse = null;
+    if (currentKey === key) setTimeout(() => openDetailSse(key), 5000);
+  };
+}
+
+// ────────────────────────────────────────────
+//  Apply reading
+// ────────────────────────────────────────────
+function applyReading(r) {
+  const accelMag = Math.sqrt((+r.accel_x)**2 + (+r.accel_y)**2 + (+r.accel_z)**2);
+  const mag      = (r.accel_mag != null ? +r.accel_mag : accelMag).toFixed(2);
+  const state    = +mag > 25 ? 'alert' : +mag > 10.2 ? 'moving' : 'resting';
+  const mv       = { alert:['IMPACT','⚡'], moving:['MOVING','🐘'], resting:['STOPPED','💤'] }[state];
+  const db       = Math.round(30 + (+r.sound / 4095) * 70);
+  const soundPct = ((+r.sound / 4095) * 100).toFixed(1);
+
+  setTxt('d-mvstat',    mv[0]);
+  setTxt('d-mvmag',     `mag: ${mag} m/s²`);
+  setTxt('d-soundstat', r.sound);
+  setTxt('d-sounddb',   `~${db} dB est.`);
+  setTxt('d-altstat',   r.alt_m != null ? `${(+r.alt_m).toFixed(1)} m` : '—');
+  setTxt('d-laststat',  fmtTs(r.ts));
+
+  const ring = document.getElementById('d-mvring');
+  ring.className = `mv-ring ${state}`;
+  ring.textContent = mv[1];
+  const lbl = document.getElementById('d-mvlabel');
+  lbl.className = `mv-state ${state}`; lbl.textContent = mv[0];
+  setTxt('d-mvmagsmall', `Magnitude: ${mag} m/s²`);
+
+  setBar('d-ax', r.accel_x, -20, 20); setTxt('d-axv', (+r.accel_x).toFixed(2));
+  setBar('d-ay', r.accel_y, -20, 20); setTxt('d-ayv', (+r.accel_y).toFixed(2));
+  setBar('d-az', r.accel_z, -20, 20); setTxt('d-azv', (+r.accel_z).toFixed(2));
+
+  // Feed speed graph with gyro data
+  if (r.gyro_x != null) pushSpeedPoint(r.gyro_x, r.gyro_y, r.gyro_z);
+
+  setTxt('d-soundbig',  r.sound);
+  setTxt('d-sounddbsp', `~${db} dB`);
+  document.getElementById('d-soundbar').style.width = soundPct + '%';
+
+  const hasGps = r.gps_valid && r.lat && r.lng;
+  const fix = document.getElementById('d-gpsfix');
+  fix.textContent = hasGps ? 'GPS FIX' : 'NO FIX';
+  fix.className   = 'sp-badge ' + (hasGps ? 'badge-green' : 'badge-red');
+  setTxt('d-gpsvalid', hasGps ? 'LOCKED' : 'SEARCHING');
+  setTxt('d-altbig', r.alt_m != null ? (+r.alt_m).toFixed(1) : '—');
+
+  if (hasGps) {
+    const lat = +r.lat, lng = +r.lng;
+    setTxt('d-lat', lat.toFixed(5));
+    setTxt('d-lng', lng.toFixed(5));
+    updateDetailMap(lat, lng);
+  }
+}
+
+// ────────────────────────────────────────────
+//  Detail map
+// ────────────────────────────────────────────
+function updateDetailMap(lat, lng) {
+  if (!detailMap) {
+    detailMap = L.map('detailMap', { zoomControl: false, attributionControl: false })
+                 .setView([lat, lng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 })
+     .addTo(detailMap);
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="width:13px;height:13px;border-radius:50%;background:#0a6ebf;border:2px solid #fff;box-shadow:0 0 0 3px rgba(10,110,191,.3);"></div>',
+      iconSize: [13,13], iconAnchor: [6,6]
+    });
+    detailMarker = L.marker([lat, lng], { icon }).addTo(detailMap);
+    detailTrack  = L.polyline(detailPts.length ? detailPts : [[lat,lng]], {
+      color:'#0a6ebf', weight:2.5, opacity:.7, dashArray:'6 4'
+    }).addTo(detailMap);
+  }
+  detailMarker.setLatLng([lat, lng]);
+  detailPts.push([lat, lng]);
+  if (detailPts.length > 500) detailPts.shift();
+  detailTrack.setLatLngs(detailPts);
+  setTxt('d-pts', detailPts.length);
+}
+
+// ────────────────────────────────────────────
+//  Cameras
+// ────────────────────────────────────────────
+function renderDetailCams() {
+  document.getElementById('d-liveCams').innerHTML = [0, 1, 2].map(id => {
+    const f = detailFrames[id];
+    if (!f) return `
+      <div class="live-cam">
+        <div class="live-cam-no">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="4"/>
+          </svg>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);margin-top:4px;">CAM-0${id} — No frame</div>
+        </div>
+      </div>`;
+    return `
+      <div class="live-cam" id="livecam-${id}">
+        <img src="${f.url}" alt="CAM-0${id}" loading="lazy" style="${id === 0 ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToContainer(this.closest('.live-cam'))">
+        <div class="cam-overlay-id">CAM-0${id}</div>
+        <div class="cam-overlay-ts">${f.ts}</div>
+        <div class="cam-live-badge"><div class="cam-live-dot"></div>LIVE</div>
+        <div class="cam-corner cam-tl"></div><div class="cam-corner cam-tr"></div>
+        <div class="cam-corner cam-bl"></div><div class="cam-corner cam-br"></div>
+      </div>`;
+  }).join('');
+}
+
+function pushDetailHistory(frames, ts) {
+  const now = Date.now();
+  const last = detailHistory[0];
+  // Merge if last group was within 20 seconds
+  if (last && (now - last._time) < 20000) {
+    frames.forEach(f => {
+      const existing = last.frames.findIndex(x => x.camId === f.camId);
+      if (existing >= 0) last.frames[existing] = f;
+      else last.frames.push(f);
+    });
+    last.ts = ts; // update timestamp label
+  } else {
+    detailHistory.unshift({ ts, frames: [...frames], _time: now });
+    if (detailHistory.length > 30) detailHistory.pop();
+  }
+  renderDetailHistory();
+}
+
+function renderDetailHistory() {
+  const wrap = document.getElementById('d-history');
+  if (!detailHistory.length) {
+    wrap.innerHTML = '<div style="padding:20px;text-align:center;font-family:\'IBM Plex Mono\',monospace;font-size:.55rem;color:var(--dim);">No camera history yet</div>';
+    return;
+  }
+  wrap.innerHTML = detailHistory.map(g => `
+    <div class="hist-group">
+      <div class="hist-group-label">${g.ts}</div>
+      <div class="hist-row">
+        ${g.frames.map(f => {
+          const url = f.url.startsWith('http') ? f.url : SERVER + f.url;
+          return `<div class="hist-thumb">
+            <img src="${url}" loading="lazy"  style="${f.camId === 0 ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToImg(this)">
+            <div class="hist-thumb-id">CAM-0${f.camId}</div>
+            <div class="hist-thumb-ts">${g.ts}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+}
+
+// ────────────────────────────────────────────
+//  Helpers
+// ────────────────────────────────────────────
+function setTxt(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+function setBar(id, v, mn, mx) {
+  const el = document.getElementById(id);
+  if (el) el.style.width = Math.min(100, Math.max(0, ((+v - mn) / (mx - mn)) * 100)).toFixed(1) + '%';
+}
+function fmtTs(ts) {
+  if (!ts) return '—';
+  try { return new Date(ts).toLocaleTimeString('en-GB'); } catch { return String(ts); }
+}
+
+boot();
+</script>
+</body>
+</html>
