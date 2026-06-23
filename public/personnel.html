@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Gajarakshak — Personnel</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#f0f2f5;--surface:#fff;--border:#d0d7de;--text:#1a2332;--dim:#6b7a8d;
+  --accent:#0a6ebf;--accent-light:#e8f2ff;--green:#1a8c4e;--green-bg:#e8f7ef;
+  --red:#c0392b;--red-bg:#fdecea;--orange:#d35400;
+  --shadow:0 1px 4px rgba(0,0,0,.10);}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);font-family:'IBM Plex Sans',sans-serif;color:var(--text);}
+
+header{background:var(--surface);border-bottom:1.5px solid var(--border);
+  padding:0 24px;height:52px;display:flex;align-items:center;
+  justify-content:space-between;box-shadow:var(--shadow);position:sticky;top:0;z-index:100;}
+.brand-name{font-size:.82rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;}
+.brand-sub{font-family:'IBM Plex Mono',monospace;font-size:.44rem;color:var(--dim);letter-spacing:2px;}
+.hdr-right{display:flex;align-items:center;gap:10px;}
+.hdr-btn{padding:5px 12px;border:1.5px solid var(--border);border-radius:7px;
+  font-family:'IBM Plex Mono',monospace;font-size:.55rem;cursor:pointer;
+  background:var(--surface);color:var(--text);text-decoration:none;display:flex;align-items:center;}
+
+main{max-width:860px;margin:0 auto;padding:24px 16px;}
+.page-hdr{margin-bottom:20px;}
+.page-title{font-family:'IBM Plex Mono',monospace;font-size:.55rem;letter-spacing:3px;
+  color:var(--dim);text-transform:uppercase;}
+.page-sub{font-size:.78rem;font-weight:600;margin-top:4px;}
+
+.el-card{background:var(--surface);border:1.5px solid var(--border);
+  border-radius:10px;margin-bottom:14px;overflow:hidden;box-shadow:var(--shadow);}
+.el-head{display:flex;align-items:center;justify-content:space-between;
+  padding:11px 16px;background:#f8f9fb;border-bottom:1px solid var(--border);
+  cursor:pointer;user-select:none;}
+.el-head:hover{background:var(--accent-light);}
+.el-title{font-size:.8rem;font-weight:600;}
+.el-sub{font-family:'IBM Plex Mono',monospace;font-size:.48rem;color:var(--dim);margin-top:2px;}
+.el-arrow{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--dim);
+  transition:transform .2s;}
+.el-arrow.open{transform:rotate(180deg);}
+
+.el-body{display:none;padding:18px 16px;}
+.el-body.open{display:block;}
+
+.sec{margin-bottom:18px;}
+.sec-label{font-family:'IBM Plex Mono',monospace;font-size:.42rem;letter-spacing:2px;
+  text-transform:uppercase;font-weight:600;padding-bottom:5px;
+  margin-bottom:12px;border-bottom:1.5px solid var(--border);}
+.sec-label.police{color:var(--accent);}
+.sec-label.forest{color:var(--green);}
+.sec-label.mahout{color:var(--orange);}
+
+.fields{display:grid;gap:10px;}
+.fields.cols2{grid-template-columns:1fr 1fr;}
+.fields.cols3{grid-template-columns:1fr 1fr 1fr;}
+.f{display:flex;flex-direction:column;gap:4px;}
+.f label{font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:var(--dim);
+  letter-spacing:1px;text-transform:uppercase;}
+.f input{padding:8px 10px;border:1.5px solid var(--border);border-radius:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:.65rem;color:var(--text);outline:none;}
+.f input:focus{border-color:var(--accent);}
+
+.el-footer{display:flex;align-items:center;justify-content:space-between;
+  padding-top:14px;border-top:1px solid var(--border);margin-top:4px;}
+.save-msg{font-family:'IBM Plex Mono',monospace;font-size:.52rem;}
+.save-msg.ok{color:var(--green);}
+.save-msg.err{color:var(--red);}
+.btn-save{padding:7px 18px;background:var(--green);color:#fff;border:none;
+  border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:.58rem;
+  font-weight:600;cursor:pointer;letter-spacing:1px;}
+.btn-save:hover{background:#157a42;}
+.btn-save:disabled{background:var(--dim);cursor:not-allowed;}
+
+.loading{padding:40px;text-align:center;font-family:'IBM Plex Mono',monospace;
+  font-size:.55rem;color:var(--dim);}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand-name">Gajarakshak — Personnel</div>
+    <div class="brand-sub">ADMIN CRIME BRANCH · SCOPX INTERACTIVE SYSTEMS</div>
+  </div>
+  <div class="hdr-right">
+    <a href="/" class="hdr-btn">← Dashboard</a>
+    <button class="hdr-btn" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<main>
+  <div class="page-hdr">
+    <div class="page-title">Personnel Management</div>
+    <div class="page-sub">Add or edit assigned personnel for each elephant</div>
+  </div>
+  <div id="formList"><div class="loading">Loading elephants…</div></div>
+</main>
+
+<script>
+// Auth check
+async function init() {
+  const res = await fetch('/api/auth/me');
+  if (!res.ok) { window.location.href = '/login.html'; return; }
+  const user = await res.json();
+  if (user.role !== 'admin') { window.location.href = '/'; return; }
+  loadDevices();
+}
+
+async function loadDevices() {
+  const res = await fetch('/api/admin/devices');
+  if (!res.ok) { window.location.href = '/'; return; }
+  const devices = await res.json();
+  render(devices);
+}
+
+function render(devices) {
+  document.getElementById('formList').innerHTML = devices.map((d, i) => {
+    const m   = d.meta   || {};
+    const pol = m.police || {};
+    const fr  = m.forest || {};
+    const mah = m.mahout || {};
+    const k   = d.device_key;
+    return `
+    <div class="el-card">
+      <div class="el-head" onclick="toggle('${k}')">
+        <div>
+          <div class="el-title">${i+1}. ${d.name}</div>
+          <div class="el-sub">${d.tag} · ${k}</div>
+        </div>
+        <div class="el-arrow" id="arr-${k}">▼</div>
+      </div>
+      <div class="el-body" id="body-${k}">
+
+        <div class="sec">
+          <div class="sec-label police">◈ Police Personnel</div>
+          <div class="fields cols3">
+            <div class="f">
+              <label>Name</label>
+              <input id="${k}-pol-name"  value="${pol.name||''}"        placeholder="Full name"/>
+            </div>
+            <div class="f">
+              <label>Designation</label>
+              <input id="${k}-pol-desig" value="${pol.designation||''}" placeholder="e.g. Inspector"/>
+            </div>
+            <div class="f">
+              <label>Phone</label>
+              <input id="${k}-pol-phone" value="${pol.phone||''}"       placeholder="+91 XXXXX XXXXX" type="tel"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label forest">◈ Forest Personnel</div>
+          <div class="fields cols3">
+            <div class="f">
+              <label>Name</label>
+              <input id="${k}-for-name"  value="${fr.name||''}"        placeholder="Full name"/>
+            </div>
+            <div class="f">
+              <label>Designation</label>
+              <input id="${k}-for-desig" value="${fr.designation||''}" placeholder="e.g. Range Officer"/>
+            </div>
+            <div class="f">
+              <label>Phone</label>
+              <input id="${k}-for-phone" value="${fr.phone||''}"       placeholder="+91 XXXXX XXXXX" type="tel"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label mahout">◈ Mahout</div>
+          <div class="fields cols2">
+            <div class="f">
+              <label>Name</label>
+              <input id="${k}-mah-name"  value="${mah.name||''}"  placeholder="Full name"/>
+            </div>
+            <div class="f">
+              <label>Phone</label>
+              <input id="${k}-mah-phone" value="${mah.phone||''}" placeholder="+91 XXXXX XXXXX" type="tel"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="el-footer">
+          <span class="save-msg" id="msg-${k}"></span>
+          <button class="btn-save" id="savebtn-${k}" onclick="save('${k}')">SAVE</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggle(k) {
+  document.getElementById(`body-${k}`).classList.toggle('open');
+  document.getElementById(`arr-${k}`).classList.toggle('open');
+}
+
+function g(id) { return document.getElementById(id)?.value.trim() || ''; }
+
+async function save(k) {
+  const btn = document.getElementById(`savebtn-${k}`);
+  const msg = document.getElementById(`msg-${k}`);
+  btn.disabled = true;
+  btn.textContent = 'SAVING…';
+  msg.textContent = '';
+
+  const meta = {
+    police: { name: g(`${k}-pol-name`), designation: g(`${k}-pol-desig`), phone: g(`${k}-pol-phone`) },
+    forest: { name: g(`${k}-for-name`), designation: g(`${k}-for-desig`), phone: g(`${k}-for-phone`) },
+    mahout: { name: g(`${k}-mah-name`), phone: g(`${k}-mah-phone`) }
+  };
+
+  try {
+    const res = await fetch(`/api/admin/devices/${k}/meta`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(meta)
+    });
+    if (res.ok) {
+      msg.textContent = '✓ Saved successfully';
+      msg.className = 'save-msg ok';
+    } else {
+      throw new Error();
+    }
+  } catch {
+    msg.textContent = '✗ Save failed';
+    msg.className = 'save-msg err';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'SAVE';
+    setTimeout(() => { msg.textContent = ''; }, 3000);
+  }
+}
+
+function logout() {
+  fetch('/api/auth/logout', { method: 'POST' })
+    .then(() => window.location.href = '/login.html');
+}
+
+init();
+</script>
+</body>
+</html>

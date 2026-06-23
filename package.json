@@ -7,8 +7,10 @@
   },
   "dependencies": {
     "aedes": "^0.51.0",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "express": "^4.22.2",
+    "express-session": "^1.19.0",
     "mqtt": "^5.15.1",
     "multer": "^2.1.1",
     "pg": "^8.21.0",

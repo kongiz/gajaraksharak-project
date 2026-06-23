@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Gajarakshak — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#f0f2f5;--surface:#fff;--border:#d0d7de;--text:#1a2332;--dim:#6b7a8d;
+  --accent:#0a6ebf;--red:#c0392b;--red-bg:#fdecea;
+  --shadow:0 1px 4px rgba(0,0,0,.10),0 2px 12px rgba(0,0,0,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);font-family:'IBM Plex Sans',sans-serif;color:var(--text);
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+
+.wrap{width:100%;max-width:400px;padding:20px;}
+
+.brand{text-align:center;margin-bottom:32px;}
+.brand img{width:54px;height:54px;object-fit:contain;margin-bottom:10px;}
+.brand-name{font-size:.95rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;}
+.brand-sub{font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);
+  letter-spacing:2px;margin-top:4px;}
+
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;
+  padding:28px 24px;box-shadow:var(--shadow);}
+.card-title{font-family:'IBM Plex Mono',monospace;font-size:.5rem;letter-spacing:3px;
+  color:var(--dim);text-transform:uppercase;text-align:center;margin-bottom:22px;}
+
+.field{margin-bottom:16px;}
+.field label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.46rem;
+  letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin-bottom:5px;}
+.field select,
+.field input{
+  width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:7px;
+  font-family:'IBM Plex Mono',monospace;font-size:.7rem;color:var(--text);
+  background:var(--surface);outline:none;
+}
+.field select{
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%236b7a8d' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;
+}
+.field select:focus,
+.field input:focus{border-color:var(--accent);}
+
+.btn-login{width:100%;padding:11px;background:var(--accent);color:#fff;border:none;
+  border-radius:7px;font-family:'IBM Plex Mono',monospace;font-size:.66rem;font-weight:600;
+  letter-spacing:2px;cursor:pointer;margin-top:4px;transition:background .15s;}
+.btn-login:hover{background:#0958a0;}
+.btn-login:disabled{background:var(--dim);cursor:not-allowed;}
+
+.err{display:none;background:var(--red-bg);border:1px solid var(--red);border-radius:6px;
+  padding:8px 12px;margin-top:12px;font-family:'IBM Plex Mono',monospace;
+  font-size:.54rem;color:var(--red);text-align:center;}
+
+.footer{text-align:center;margin-top:20px;font-family:'IBM Plex Mono',monospace;
+  font-size:.44rem;color:var(--dim);letter-spacing:1px;}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="brand">
+    <img src="image.png" alt="ScopX"/>
+    <div class="brand-name">Gajarakshak Nirixana</div>
+    <div class="brand-sub">ELEPHANT TELEMETRY SYSTEM · SCOPX INTERACTIVE SYSTEMS</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Authorized Personnel Only</div>
+
+    <div class="field">
+      <label>Department</label>
+      <select id="deptSelect" onchange="onDeptSelect()">
+        <option value="">— Select Department —</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="passwordInput" placeholder="Enter password"
+             onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+
+    <button class="btn-login" id="loginBtn" onclick="doLogin()">LOGIN</button>
+    <div class="err" id="errBox"></div>
+  </div>
+
+  <div class="footer">GAJARAKSHAK v1.0 · SCOPX INTERACTIVE SYSTEMS</div>
+</div>
+
+<script>
+let departments = [];
+
+// Load department list on page load
+async function loadDepts() {
+  try {
+    const res = await fetch('/api/departments');
+    departments = await res.json();
+    const sel = document.getElementById('deptSelect');
+    departments.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.username;
+      opt.textContent = d.name;
+      sel.appendChild(opt);
+    });
+  } catch {
+    showErr('Cannot reach server.');
+  }
+}
+
+function onDeptSelect() {
+  document.getElementById('passwordInput').value = '';
+  document.getElementById('errBox').style.display = 'none';
+}
+
+async function doLogin() {
+  const username = document.getElementById('deptSelect').value;
+  const password = document.getElementById('passwordInput').value;
+  const btn      = document.getElementById('loginBtn');
+
+  document.getElementById('errBox').style.display = 'none';
+
+  if (!username) return showErr('Please select your department.');
+  if (!password) return showErr('Please enter the password.');
+
+  btn.disabled = true;
+  btn.textContent = 'VERIFYING…';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showErr(data.error || 'Login failed.');
+      return;
+    }
+
+    window.location.href = '/';
+
+  } catch {
+    showErr('Cannot reach server. Try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'LOGIN';
+  }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('errBox');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+loadDepts();
+</script>
+</body>
+</html>

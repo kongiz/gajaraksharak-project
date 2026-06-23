@@ -4,25 +4,30 @@ const http     = require('http');
 const { Pool } = require('pg');
 const fs       = require('fs');
 const path     = require('path');
-
+const session  = require('express-session');
+const bcrypt   = require('bcryptjs');
 
 const PORT       = process.env.PORT || 3000;
 const FRAMES_DIR = path.join(__dirname, 'public', 'frames');
 
 if (!fs.existsSync(FRAMES_DIR)) fs.mkdirSync(FRAMES_DIR, { recursive: true });
 
+const connectionString = process.env.DATABASE_URL
+  || 'postgresql://ryuser:Lastresort61$@scopx-ry.postgres.database.azure.com/Gejarastra?sslmode=require';
+
+const needsSSL = /sslmode=require/i.test(connectionString) || /azure\.com/i.test(connectionString);
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
-    || 'postgresql://postgres:password@localhost:5432/gejarastha'
+  connectionString,
+  ssl: needsSSL ? { rejectUnauthorized: false } : false
 });
 
-
+// ── Device cache ──
 const deviceCache = new Map();
 
 async function loadDevices() {
   const { rows } = await pool.query(
-    `SELECT id, device_key, name, tag FROM devices ORDER BY id`
+    `SELECT id, device_key, name, tag, meta FROM devices ORDER BY id`
   );
   rows.forEach(r => deviceCache.set(r.device_key, r));
   console.log(`[DB]  loaded ${rows.length} devices`);
@@ -33,25 +38,22 @@ async function loadDevices() {
 
 async function resolveDevice(key) {
   if (deviceCache.has(key)) return deviceCache.get(key);
-  // Not in cache — try DB (might have been added after startup)
   const { rows } = await pool.query(
-    `SELECT id, device_key, name, tag FROM devices WHERE device_key = $1`, [key]
+    `SELECT id, device_key, name, tag, meta FROM devices WHERE device_key = $1`, [key]
   );
   if (!rows.length) return null;
   deviceCache.set(key, rows[0]);
   return rows[0];
 }
 
-
+// ── SSE helpers ──
 const sseClients = new Map();
 
 function sseNotify(deviceId, event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  // Notify subscribers of this specific elephant
   if (sseClients.has(deviceId)) {
     for (const res of sseClients.get(deviceId)) res.write(msg);
   }
-  // Notify fleet-level subscribers
   if (sseClients.has('all')) {
     const fleetMsg = `event: ${event}\ndata: ${JSON.stringify({ ...data, deviceId })}\n\n`;
     for (const res of sseClients.get('all')) res.write(fleetMsg);
@@ -67,16 +69,119 @@ function removeSseClient(channel, res) {
   if (sseClients.has(channel)) sseClients.get(channel).delete(res);
 }
 
-// Express app + HTTP server setup
+// ── Create app FIRST ──
 const app    = express();
 const server = http.createServer(app);
 
+// ── Middleware in correct order ──
 app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'gajarakshak-scopx-2024',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 8 * 60 * 60 * 1000 }
+}));
+
+// ── Auth middleware ──
+function requireLogin(req, res, next) {
+  if (req.session?.user) return next();
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not logged in' });
+  res.redirect('/login.html');
+}
+
+function requireAdmin(req, res, next) {
+  if (req.session?.user?.role === 'admin') return next();
+  res.status(403).json({ error: 'Admin only' });
+}
+
+// ── Auth routes (public — no requireLogin) ──
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password)
+    return res.status(400).json({ error: 'Missing credentials' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM departments WHERE username = $1`, [username]
+    );
+    if (!rows.length)
+      return res.status(401).json({ error: 'Invalid username or password' });
+
+    const dept  = rows[0];
+    const valid = await bcrypt.compare(password, dept.password);
+    if (!valid)
+      return res.status(401).json({ error: 'Invalid username or password' });
+
+    req.session.user = {
+      id:       dept.id,
+      username: dept.username,
+      name:     dept.name,
+      role:     dept.role
+    };
+    res.json({ ok: true, role: dept.role, name: dept.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy();
+  res.json({ ok: true });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  res.json(req.session.user);
+});
+
+// ── Department list for login dropdown (public) ──
+app.get('/api/departments', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, username FROM departments ORDER BY id`
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Protected page routes ──
+app.get('/', requireLogin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/personnel.html', requireLogin, requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'personnel.html'));
+});
+
+// ── Static files (login.html is public) ──
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/frames', express.static(FRAMES_DIR));
 
-// SSE: fleet-level (all elephants) — dashboard connects here for map + alerts feed
-app.get('/events', (req, res) => {
+// ── Admin routes ──
+app.get('/api/admin/devices', requireLogin, requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, device_key, name, tag, meta FROM devices ORDER BY id`
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/admin/devices/:key/meta', requireLogin, requireAdmin, async (req, res) => {
+  const device = await resolveDevice(req.params.key);
+  if (!device) return res.status(404).json({ error: 'unknown device' });
+  try {
+    await pool.query(
+      `UPDATE devices SET meta = $1 WHERE id = $2`,
+      [JSON.stringify(req.body), device.id]
+    );
+    device.meta = req.body;
+    deviceCache.set(req.params.key, device);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── SSE routes ──
+app.get('/events', requireLogin, (req, res) => {
   res.setHeader('Content-Type',  'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection',    'keep-alive');
@@ -87,8 +192,7 @@ app.get('/events', (req, res) => {
   req.on('close', () => removeSseClient('all', res));
 });
 
-// SSE: elephant-specific — detail view connects here for live updates
-app.get('/events/:deviceKey', async (req, res) => {
+app.get('/events/:deviceKey', requireLogin, async (req, res) => {
   const device = await resolveDevice(req.params.deviceKey);
   if (!device) return res.status(404).end();
   res.setHeader('Content-Type',  'text/event-stream');
@@ -101,50 +205,37 @@ app.get('/events/:deviceKey', async (req, res) => {
   req.on('close', () => removeSseClient(device.id, res));
 });
 
-// ESP32 DevKit posts sensor data here. We store in DB and trigger alerts + SSE updates.
+// ── Ingest routes (ESP32 — no login required, device_key is auth) ──
 app.post('/ingest', async (req, res) => {
   try {
     const s = req.body;
-
-    if (!s.device_key) {
+    if (!s.device_key)
       return res.status(400).json({ error: 'Missing device_key in body' });
-    }
 
     const device = await resolveDevice(s.device_key);
-    if (!device) {
-      return res.status(404).json({
-        error: `Unknown device_key: ${s.device_key}`,
-        hint:  'Add this device to the devices table first'
-      });
-    }
+    if (!device)
+      return res.status(404).json({ error: `Unknown device_key: ${s.device_key}`, hint: 'Add this device to the devices table first' });
 
     const { rows } = await pool.query(`
       INSERT INTO readings
-        (device_id,
-         lat, lng, alt_m, gps_valid,
-         gyro_x,  gyro_y,  gyro_z,
-         accel_x, accel_y, accel_z,
-         sound)
+        (device_id, lat, lng, alt_m, gps_valid,
+         gyro_x, gyro_y, gyro_z, accel_x, accel_y, accel_z, sound)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       RETURNING id, ts, gyro_mag, accel_mag`,
       [
         device.id,
-        s.lat      ?? 0,  s.lng      ?? 0,  s.alt      ?? 0,
-        s.gps_valid ?? false,
-        s.gyro_x   ?? 0,  s.gyro_y   ?? 0,  s.gyro_z   ?? 0,
-        s.accel_x  ?? 0,  s.accel_y  ?? 0,  s.accel_z  ?? 0,
-        s.sound    ?? 0
+        s.lat      ?? 0, s.lng      ?? 0, s.alt      ?? 0, s.gps_valid ?? false,
+        s.gyro_x   ?? 0, s.gyro_y   ?? 0, s.gyro_z   ?? 0,
+        s.accel_x  ?? 0, s.accel_y  ?? 0, s.accel_z  ?? 0, s.sound ?? 0
       ]
     );
     const reading = rows[0];
 
     await pool.query(`UPDATE devices SET last_seen = NOW() WHERE id = $1`, [device.id]);
 
-    // Auto-alerts
     if (reading.accel_mag > 25) {
       await pool.query(
-        `INSERT INTO alerts (device_id, reading_id, kind, detail)
-         VALUES ($1, $2, 'impact', $3)`,
+        `INSERT INTO alerts (device_id, reading_id, kind, detail) VALUES ($1,$2,'impact',$3)`,
         [device.id, reading.id, JSON.stringify({ accel_mag: reading.accel_mag })]
       );
       sseNotify(device.id, 'alert', {
@@ -154,8 +245,7 @@ app.post('/ingest', async (req, res) => {
     }
     if ((s.sound ?? 0) > 3000) {
       await pool.query(
-        `INSERT INTO alerts (device_id, reading_id, kind, detail)
-         VALUES ($1, $2, 'loud', $3)`,
+        `INSERT INTO alerts (device_id, reading_id, kind, detail) VALUES ($1,$2,'loud',$3)`,
         [device.id, reading.id, JSON.stringify({ sound: s.sound })]
       );
       sseNotify(device.id, 'alert', {
@@ -173,38 +263,33 @@ app.post('/ingest', async (req, res) => {
     sseNotify(device.id, 'update', {
       reading: {
         id: reading.id, ts: reading.ts, ...s,
-        device_id:  device.id,
-        device_key: s.device_key,
-        name:       device.name,
-        tag:        device.tag,
-        gyro_mag:   reading.gyro_mag,
-        accel_mag:  reading.accel_mag
+        device_id: device.id, device_key: s.device_key,
+        name: device.name, tag: device.tag,
+        gyro_mag: reading.gyro_mag, accel_mag: reading.accel_mag
       },
       frames: []
     });
 
     res.json({ ok: true, readingId: reading.id, deviceId: device.id });
-
   } catch (err) {
     console.error('[INGEST] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Frames (images) are posted here as multipart/form-data with ?cam=0&key=DEVICE_KEY and optional ?rid=READING_ID to link to a specific reading. If ?rid is missing, we link to the latest reading for that device.
 app.post('/ingest-frame', async (req, res) => {
-  const camId    = parseInt(req.query.cam)  || 0;
+  const camId    = parseInt(req.query.cam) || 0;
   const ridParam = req.query.rid ? parseInt(req.query.rid) : null;
   const devKey   = req.query.key;
 
   if (!devKey) return res.status(400).json({ error: 'Missing ?key= param' });
 
   const device = await resolveDevice(devKey);
-  if (!device)  return res.status(404).json({ error: `Unknown device_key: ${devKey}` });
+  if (!device) return res.status(404).json({ error: `Unknown device_key: ${devKey}` });
 
   const chunks = [];
   req.on('data', chunk => chunks.push(chunk));
-  req.on('end',  async () => {
+  req.on('end', async () => {
     try {
       const buf = Buffer.concat(chunks);
       if (buf.length === 0) return res.status(400).json({ error: 'empty body' });
@@ -222,8 +307,7 @@ app.post('/ingest-frame', async (req, res) => {
       fs.writeFileSync(path.join(FRAMES_DIR, fname), buf);
 
       await pool.query(
-        `INSERT INTO frames (reading_id, cam_id, filename, size_bytes)
-         VALUES ($1, $2, $3, $4)`,
+        `INSERT INTO frames (reading_id, cam_id, filename, size_bytes) VALUES ($1,$2,$3,$4)`,
         [readingId, camId, fname, buf.length]
       );
 
@@ -236,7 +320,6 @@ app.post('/ingest-frame', async (req, res) => {
       });
 
       res.json({ ok: true, cam: camId, file: fname });
-
     } catch (err) {
       console.error('[FRAME] error:', err.message);
       res.status(500).json({ error: err.message });
@@ -249,49 +332,36 @@ app.post('/ingest-frame', async (req, res) => {
   });
 });
 
-
-// All devices + their latest reading in one call
-// Used by the fleet map on the dashboard
-app.get('/api/fleet', async (req, res) => {
+// ── API routes ──
+app.get('/api/fleet', requireLogin, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT
-        d.id, d.device_key, d.name, d.tag, d.last_seen,
-        r.id         AS reading_id,
-        r.ts,
-        r.lat,        r.lng,        r.alt_m,   r.gps_valid,
-        r.gyro_x,     r.gyro_y,     r.gyro_z,  r.gyro_mag,
-        r.accel_x,    r.accel_y,    r.accel_z, r.accel_mag,
+        d.id, d.device_key, d.name, d.tag, d.meta, d.last_seen,
+        r.id AS reading_id, r.ts,
+        r.lat, r.lng, r.alt_m, r.gps_valid,
+        r.gyro_x, r.gyro_y, r.gyro_z, r.gyro_mag,
+        r.accel_x, r.accel_y, r.accel_z, r.accel_mag,
         r.sound,
-        f0.url       AS cam0_url,
-        f1.url       AS cam1_url,
-        f2.url       AS cam2_url
+        f0.url AS cam0_url, f1.url AS cam1_url, f2.url AS cam2_url
       FROM devices d
       LEFT JOIN LATERAL (
-        SELECT * FROM readings
-        WHERE device_id = d.id
-        ORDER BY ts DESC LIMIT 1
+        SELECT * FROM readings WHERE device_id = d.id ORDER BY ts DESC LIMIT 1
       ) r ON true
       LEFT JOIN LATERAL (
-        SELECT '/frames/' || fr.filename AS url
-        FROM frames fr
+        SELECT '/frames/' || fr.filename AS url FROM frames fr
         JOIN readings rr ON fr.reading_id = rr.id
-        WHERE rr.device_id = d.id AND fr.cam_id = 0
-        ORDER BY fr.id DESC LIMIT 1
+        WHERE rr.device_id = d.id AND fr.cam_id = 0 ORDER BY fr.id DESC LIMIT 1
       ) f0 ON true
       LEFT JOIN LATERAL (
-        SELECT '/frames/' || fr.filename AS url
-        FROM frames fr
+        SELECT '/frames/' || fr.filename AS url FROM frames fr
         JOIN readings rr ON fr.reading_id = rr.id
-        WHERE rr.device_id = d.id AND fr.cam_id = 1
-        ORDER BY fr.id DESC LIMIT 1
+        WHERE rr.device_id = d.id AND fr.cam_id = 1 ORDER BY fr.id DESC LIMIT 1
       ) f1 ON true
       LEFT JOIN LATERAL (
-        SELECT '/frames/' || fr.filename AS url
-        FROM frames fr
+        SELECT '/frames/' || fr.filename AS url FROM frames fr
         JOIN readings rr ON fr.reading_id = rr.id
-        WHERE rr.device_id = d.id AND fr.cam_id = 2
-        ORDER BY fr.id DESC LIMIT 1
+        WHERE rr.device_id = d.id AND fr.cam_id = 2 ORDER BY fr.id DESC LIMIT 1
       ) f2 ON true
       ORDER BY d.id
     `);
@@ -299,9 +369,7 @@ app.get('/api/fleet', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-
-// Latest reading + frames for one elephant
-app.get('/api/elephant/:key/latest', async (req, res) => {
+app.get('/api/elephant/:key/latest', requireLogin, async (req, res) => {
   const device = await resolveDevice(req.params.key);
   if (!device) return res.status(404).json({ error: 'unknown device' });
   try {
@@ -312,75 +380,85 @@ app.get('/api/elephant/:key/latest', async (req, res) => {
       ? await pool.query(`SELECT * FROM v_latest_frames WHERE device_id = $1`, [device.id])
       : { rows: [] };
     res.json({
-      device:  { id: device.id, key: device.device_key, name: device.name, tag: device.tag },
+      device:  { id: device.id, key: device.device_key, name: device.name, tag: device.tag, meta: device.meta || {} },
       reading: r.rows[0] || null,
       frames:  f.rows
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GPS track for one elephant
-app.get('/api/elephant/:key/track', async (req, res) => {
+app.get('/api/elephant/:key/track', requireLogin, async (req, res) => {
   const device = await resolveDevice(req.params.key);
   if (!device) return res.status(404).json({ error: 'unknown device' });
   try {
-    const { rows } = await pool.query(`
-      SELECT ts, lat, lng, alt_m
-      FROM   gps_track
-      WHERE  device_id = $1
-      ORDER  BY ts ASC`, [device.id]
+    const { rows } = await pool.query(
+      `SELECT ts, lat, lng, alt_m FROM gps_track WHERE device_id = $1 ORDER BY ts ASC`,
+      [device.id]
     );
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Sensor history for one elephant
-app.get('/api/elephant/:key/history', async (req, res) => {
+app.get('/api/elephant/:key/history', requireLogin, async (req, res) => {
   const device = await resolveDevice(req.params.key);
   if (!device) return res.status(404).json({ error: 'unknown device' });
   const limit = Math.min(parseInt(req.query.limit) || 200, 1000);
   try {
     const { rows } = await pool.query(`
-      SELECT id, ts,
-             lat, lng, alt_m, gps_valid,
+      SELECT id, ts, lat, lng, alt_m, gps_valid,
              gyro_x, gyro_y, gyro_z, gyro_mag,
-             accel_x, accel_y, accel_z, accel_mag,
-             sound
-      FROM   readings
-      WHERE  device_id = $1
-      ORDER  BY ts DESC
-      LIMIT  $2`, [device.id, limit]
+             accel_x, accel_y, accel_z, accel_mag, sound
+      FROM readings WHERE device_id = $1
+      ORDER BY ts DESC LIMIT $2`, [device.id, limit]
     );
     res.json(rows.reverse());
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Alerts for one elephant (or all if no key given)
-app.get('/api/elephant/:key/alerts', async (req, res) => {
+app.get('/api/elephant/:key/frames', requireLogin, async (req, res) => {
+  const device = await resolveDevice(req.params.key);
+  if (!device) return res.status(404).json({ error: 'unknown device' });
+  const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+  try {
+    const { rows } = await pool.query(`
+      SELECT f.cam_id AS "camId",
+             '/frames/' || f.filename AS url,
+             f.ts
+      FROM frames f
+      JOIN readings r ON f.reading_id = r.id
+      WHERE r.device_id = $1
+      ORDER BY f.ts DESC
+      LIMIT $2
+    `, [device.id, limit * 3]);
+    res.json(rows);
+  } catch (err) {
+    console.error('[FRAMES]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/elephant/:key/alerts', requireLogin, async (req, res) => {
   const device = await resolveDevice(req.params.key);
   if (!device) return res.status(404).json({ error: 'unknown device' });
   const unseenOnly = req.query.unseen === 'true';
   try {
     const { rows } = await pool.query(`
-      SELECT id, kind, detail, ts, seen
-      FROM   alerts
-      WHERE  device_id = $1
-        ${unseenOnly ? 'AND seen = FALSE' : ''}
-      ORDER  BY ts DESC LIMIT 50`, [device.id]
+      SELECT id, kind, detail, ts, seen FROM alerts
+      WHERE device_id = $1 ${unseenOnly ? 'AND seen = FALSE' : ''}
+      ORDER BY ts DESC LIMIT 50`, [device.id]
     );
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Mark alert seen
-app.patch('/api/alerts/:id/seen', async (req, res) => {
+app.patch('/api/alerts/:id/seen', requireLogin, async (req, res) => {
   try {
     await pool.query(`UPDATE alerts SET seen = TRUE WHERE id = $1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Start server after loading devices into cache
+// ── Start ──
 loadDevices().then(() => {
   server.listen(PORT, '0.0.0.0', () =>
     console.log(`[HTTP] Listening on :${PORT}`)

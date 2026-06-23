@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Gajarakshak — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#f0f2f5;--surface:#fff;--border:#d0d7de;--text:#1a2332;--dim:#6b7a8d;
+  --accent:#0a6ebf;--accent-light:#e8f2ff;--green:#1a8c4e;--green-bg:#e8f7ef;
+  --red:#c0392b;--red-bg:#fdecea;--orange:#d35400;--shadow:0 1px 4px rgba(0,0,0,.10);}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);font-family:'IBM Plex Sans',sans-serif;color:var(--text);min-height:100vh;}
+header{background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 24px;height:52px;
+  display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow);}
+.brand{font-size:.8rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;}
+.brand-sub{font-family:'IBM Plex Mono',monospace;font-size:.48rem;color:var(--dim);letter-spacing:2px;}
+.hdr-right{display:flex;align-items:center;gap:10px;}
+
+/* Login screen */
+#loginScreen{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 52px);}
+.login-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+  padding:32px 28px;width:340px;box-shadow:var(--shadow);}
+.login-title{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:3px;
+  color:var(--dim);text-transform:uppercase;margin-bottom:18px;}
+.login-card input{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:.75rem;margin-bottom:12px;outline:none;}
+.login-card input:focus{border-color:var(--accent);}
+.btn{padding:9px 18px;border:none;border-radius:6px;font-family:'IBM Plex Mono',monospace;
+  font-size:.65rem;font-weight:600;cursor:pointer;letter-spacing:1px;}
+.btn-primary{background:var(--accent);color:#fff;width:100%;}
+.btn-primary:hover{background:#0958a0;}
+.btn-save{background:var(--green);color:#fff;font-size:.58rem;padding:6px 14px;}
+.btn-save:hover{background:#157a42;}
+.err{font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--red);
+  margin-top:8px;display:none;}
+
+/* Admin content */
+#adminContent{display:none;max-width:900px;margin:0 auto;padding:24px 16px;}
+.page-title{font-family:'IBM Plex Mono',monospace;font-size:.55rem;letter-spacing:3px;
+  color:var(--dim);text-transform:uppercase;margin-bottom:20px;}
+
+/* Elephant cards */
+.el-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+  margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow);}
+.el-card-head{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;background:#f8f9fb;border-bottom:1px solid var(--border);cursor:pointer;}
+.el-card-head:hover{background:var(--accent-light);}
+.el-name{font-size:.82rem;font-weight:600;}
+.el-tag{font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);margin-top:1px;}
+.el-chevron{font-size:.7rem;color:var(--dim);transition:transform .2s;}
+.el-chevron.open{transform:rotate(180deg);}
+.el-body{display:none;padding:16px;}
+.el-body.open{display:block;}
+
+/* Section headers inside card */
+.sec-head{font-family:'IBM Plex Mono',monospace;font-size:.44rem;letter-spacing:2px;
+  text-transform:uppercase;padding-bottom:6px;margin-bottom:10px;
+  border-bottom:1.5px solid var(--border);font-weight:600;}
+.sec-head.police{color:var(--accent);}
+.sec-head.forest{color:var(--green);}
+.sec-head.mahout{color:var(--orange);}
+
+/* Form grid */
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+.field-grid.cols3{grid-template-columns:1fr 1fr 1fr;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-family:'IBM Plex Mono',monospace;font-size:.44rem;color:var(--dim);
+  letter-spacing:1px;text-transform:uppercase;}
+.field input{padding:7px 10px;border:1.5px solid var(--border);border-radius:6px;
+  font-family:'IBM Plex Mono',monospace;font-size:.65rem;outline:none;color:var(--text);}
+.field input:focus{border-color:var(--accent);}
+.card-footer{display:flex;align-items:center;justify-content:space-between;
+  padding-top:12px;border-top:1px solid var(--border);}
+.save-status{font-family:'IBM Plex Mono',monospace;font-size:.52rem;}
+.save-status.ok{color:var(--green);}
+.save-status.err{color:var(--red);}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand">Gajarakshak Nirixana — Admin</div>
+    <div class="brand-sub">PERSONNEL MANAGEMENT · SCOPX INTERACTIVE SYSTEMS</div>
+  </div>
+  <div class="hdr-right">
+    <a href="/" style="font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--accent);">← Dashboard</a>
+  </div>
+</header>
+
+<!-- Login -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-title">Admin Access</div>
+    <input type="password" id="pwInput" placeholder="Enter admin password" 
+           onkeydown="if(event.key==='Enter')doLogin()"/>
+    <button class="btn btn-primary" onclick="doLogin()">LOGIN</button>
+    <div class="err" id="loginErr">Incorrect password</div>
+  </div>
+</div>
+
+<!-- Admin content -->
+<div id="adminContent">
+  <div class="page-title">Elephant Personnel — Edit Details</div>
+  <div id="elephantForms"></div>
+</div>
+
+<script>
+let adminKey = '';
+
+function doLogin() {
+  const pw = document.getElementById('pwInput').value.trim();
+  if (!pw) return;
+  adminKey = pw;
+  loadDevices();
+}
+
+async function loadDevices() {
+  const res = await fetch('/api/admin/devices', {
+    headers: { 'x-admin-key': adminKey }
+  });
+  if (res.status === 401) {
+    document.getElementById('loginErr').style.display = 'block';
+    adminKey = '';
+    return;
+  }
+  const devices = await res.json();
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('adminContent').style.display = 'block';
+  renderForms(devices);
+}
+
+function renderForms(devices) {
+  document.getElementById('elephantForms').innerHTML = devices.map((d, i) => {
+    const m = d.meta || {};
+    const pol = m.police  || {};
+    const for_ = m.forest || {};
+    const mah  = m.mahout || {};
+    return `
+    <div class="el-card" id="card-${d.device_key}">
+      <div class="el-card-head" onclick="toggleCard('${d.device_key}')">
+        <div>
+          <div class="el-name">${i+1}. ${d.name}</div>
+          <div class="el-tag">${d.tag} · ${d.device_key}</div>
+        </div>
+        <div class="el-chevron" id="chev-${d.device_key}">▼</div>
+      </div>
+      <div class="el-body" id="body-${d.device_key}">
+
+        <div class="sec-head police">◈ Police Personnel</div>
+        <div class="field-grid cols3">
+          <div class="field">
+            <label>Name</label>
+            <input type="text" id="${d.device_key}-police-name" value="${pol.name||''}" placeholder="Full name"/>
+          </div>
+          <div class="field">
+            <label>Designation</label>
+            <input type="text" id="${d.device_key}-police-desig" value="${pol.designation||''}" placeholder="e.g. Range Inspector"/>
+          </div>
+          <div class="field">
+            <label>Phone</label>
+            <input type="tel" id="${d.device_key}-police-phone" value="${pol.phone||''}" placeholder="+91 XXXXX XXXXX"/>
+          </div>
+        </div>
+
+        <div class="sec-head forest">◈ Forest Personnel</div>
+        <div class="field-grid cols3">
+          <div class="field">
+            <label>Name</label>
+            <input type="text" id="${d.device_key}-forest-name" value="${for_.name||''}" placeholder="Full name"/>
+          </div>
+          <div class="field">
+            <label>Designation</label>
+            <input type="text" id="${d.device_key}-forest-desig" value="${for_.designation||''}" placeholder="e.g. Forest Range Officer"/>
+          </div>
+          <div class="field">
+            <label>Phone</label>
+            <input type="tel" id="${d.device_key}-forest-phone" value="${for_.phone||''}" placeholder="+91 XXXXX XXXXX"/>
+          </div>
+        </div>
+
+        <div class="sec-head mahout">◈ Mahout</div>
+        <div class="field-grid">
+          <div class="field">
+            <label>Name</label>
+            <input type="text" id="${d.device_key}-mahout-name" value="${mah.name||''}" placeholder="Full name"/>
+          </div>
+          <div class="field">
+            <label>Phone</label>
+            <input type="tel" id="${d.device_key}-mahout-phone" value="${mah.phone||''}" placeholder="+91 XXXXX XXXXX"/>
+          </div>
+        </div>
+
+        <div class="card-footer">
+          <span class="save-status" id="status-${d.device_key}"></span>
+          <button class="btn btn-save" onclick="saveMeta('${d.device_key}')">SAVE</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleCard(key) {
+  const body = document.getElementById(`body-${key}`);
+  const chev = document.getElementById(`chev-${key}`);
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}
+
+function g(id) { return document.getElementById(id)?.value.trim() || ''; }
+
+async function saveMeta(key) {
+  const meta = {
+    police: {
+      name:        g(`${key}-police-name`),
+      designation: g(`${key}-police-desig`),
+      phone:       g(`${key}-police-phone`)
+    },
+    forest: {
+      name:        g(`${key}-forest-name`),
+      designation: g(`${key}-forest-desig`),
+      phone:       g(`${key}-forest-phone`)
+    },
+    mahout: {
+      name:  g(`${key}-mahout-name`),
+      phone: g(`${key}-mahout-phone`)
+    }
+  };
+
+  const statusEl = document.getElementById(`status-${key}`);
+  statusEl.textContent = 'Saving…';
+  statusEl.className = 'save-status';
+
+  try {
+    const res = await fetch(`/api/admin/devices/${key}/meta`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-key': adminKey
+      },
+      body: JSON.stringify(meta)
+    });
+    if (res.ok) {
+      statusEl.textContent = '✓ Saved';
+      statusEl.className = 'save-status ok';
+    } else {
+      throw new Error('Failed');
+    }
+  } catch {
+    statusEl.textContent = '✗ Error saving';
+    statusEl.className = 'save-status err';
+  }
+
+  setTimeout(() => { statusEl.textContent = ''; }, 3000);
+}
+</script>
+</body>
+</html>

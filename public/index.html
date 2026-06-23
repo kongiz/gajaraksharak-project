@@ -90,7 +90,7 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
 
 /* ══ DETAIL PAGE ══ */
 #pageDetail{flex-direction:column;overflow:hidden;height:calc(100vh - 52px);}
-.detail-stat-bar{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1.5px solid var(--border);background:var(--surface);flex-shrink:0;}
+.detail-stat-bar{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1.5px solid var(--border);background:var(--surface);flex-shrink:0;}
 .dsb-item{padding:9px 14px;border-right:1px solid var(--border);position:relative;overflow:hidden;}
 .dsb-item:last-child{border-right:none;}
 .dsb-item::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;}
@@ -191,11 +191,58 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
 #speedCanvas{width:100%;height:52px;display:block;border-radius:4px;}
 
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:var(--border2);}
+
+#lbOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,.88);
+  cursor: zoom-out;
+}
+#lbOverlay.open {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#lbOverlay img {
+  width: min(92vw, 1100px);
+  height: auto;
+  max-height: 88vh;
+  border-radius: 6px;
+  object-fit: contain;
+  display: block;
+  box-shadow: 0 8px 60px rgba(0,0,0,.7);
+  image-rendering: auto;
+}
+#lbClose {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: .75rem;
+  color: #fff;
+  cursor: pointer;
+  background: rgba(255,255,255,.15);
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 6px;
+  padding: 6px 14px;
+  letter-spacing: 1px;
+  z-index: 10000;
+}
+#lbClose:hover { background: rgba(255,255,255,.25); }
+
+#personnelModal .modal-content,
+#personnelModal [style*="font-family:'IBM Plex Mono'"],
+#personnelModal [style*='font-family:"IBM Plex Mono"'] {
+  font-size: 1em !important;
+}
 </style>
 </head>
 <body>
 
 <header>
+
   <a class="brand" href="#" onclick="showFleet();return false;">
     <div class="brand-logo">
       <img src="image.png" alt="ScopX" style="width:38px;height:38px;object-fit:contain;">
@@ -206,13 +253,47 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
       <div class="brand-sub">ELEPHANT TELEMETRY SYSTEM · SCOPX INTERACTIVE SYSTEMS</div>
     </div>
   </a>
-  <div class="hdr-right">
-    <button class="back-btn" id="backBtn" onclick="showFleet()">
-      <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>FLEET VIEW
-    </button>
-    <span class="clock-el" id="clockEl">--:--:--</span>
-    <div class="conn-pill connecting" id="connPill"><div class="dot"></div><span id="connLabel">CONNECTING</span></div>
+ <div class="hdr-right">
+  <button class="back-btn" id="backBtn" onclick="showFleet()">
+    <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>FLEET VIEW
+  </button>
+
+  <!-- Department name label -->
+  <span style="font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--dim);
+               border:1px solid var(--border);border-radius:5px;padding:4px 10px;"
+        id="userLabel"></span>
+
+  <!-- Personnel button — hidden by default, shown only to admin -->
+  <a href="/personnel.html" id="personnelBtn"
+     style="display:none;align-items:center;gap:5px;padding:5px 11px;
+            border:1.5px solid var(--accent);border-radius:7px;
+            background:var(--accent-light);text-decoration:none;
+            font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--accent);">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+    PERSONNEL
+  </a>
+
+  <!-- Logout -->
+  <button onclick="logout()"
+          style="padding:5px 11px;border:1.5px solid var(--border);border-radius:7px;
+                 background:none;cursor:pointer;font-family:'IBM Plex Mono',monospace;
+                 font-size:.55rem;color:var(--dim);">
+    LOGOUT
+  </button>
+
+  <span class="clock-el" id="clockEl">--:--:--</span>
+  <div class="conn-pill connecting" id="connPill">
+    <div class="dot"></div><span id="connLabel">CONNECTING</span>
   </div>
+</div>
+
+  <!-- LSomething else -->
 </header>
 
 <!-- ══ FLEET PAGE ══ -->
@@ -263,6 +344,21 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
       <div class="dsb-label">Last Update</div>
       <div class="dsb-val" id="d-laststat" style="font-size:.7rem;">—</div>
       <div class="dsb-sub" id="d-devicename">from collar unit</div>
+    </div>
+
+     <div class="dsb-item" style="display:flex;align-items:center;justify-content:center;cursor:pointer;"
+       onclick="openPersonnelModal()">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+           stroke="var(--accent)" stroke-width="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:.44rem;
+                  letter-spacing:2px;color:var(--accent);font-weight:700;">PERSONNEL</div>
+    </div>
     </div>
   </div>
   <div class="detail-body">
@@ -377,6 +473,36 @@ let detailHistory   = [];
 // SPEED GRAPH — maintain a rolling history of gyro magnitudes and draw on canvas
 const SPEED_MAX_PTS = 60;
 let speedHistory = [];  // array of gyro magnitudes
+
+async function boot() {
+  // Check auth first
+  const meRes = await fetch('/api/auth/me');
+  if (!meRes.ok) {
+    window.location.href = '/login.html';
+    return;
+  }
+  const user = await meRes.json();
+  window.currentUser = user;
+
+  // Show department name
+  const label = document.getElementById('userLabel');
+  if (label) label.textContent = user.name;
+
+  // Show PERSONNEL button only for admin
+  if (user.role === 'admin') {
+    const btn = document.getElementById('personnelBtn');
+    if (btn) btn.style.display = 'flex';
+  }
+
+  setConn('connecting');
+  await loadFleet();
+  setTimeout(() => { initFleetMap(); openFleetSse(); }, 0);
+}
+
+// function logout() {
+//   fetch('/api/auth/logout', { method: 'POST' })
+//     .then(() => window.location.href = '/login.html');
+// }
 
 function pushSpeedPoint(gx, gy, gz) {
   const mag = Math.sqrt((+gx)**2 + (+gy)**2 + (+gz)**2);
@@ -585,6 +711,25 @@ setInterval(() => {
     new Date().toLocaleTimeString('en-GB');
 }, 1000);
 
+function openLb(url, rotated, evt) {
+  if (evt) evt.stopPropagation();
+  const overlay = document.getElementById('lbOverlay');
+  const img = document.getElementById('lbImg');
+  img.style.opacity = '0';
+  img.style.transition = 'opacity .2s';
+  img.src = url;
+  img.style.transform = rotated ? 'rotate(180deg)' : 'none';
+  img.onload = () => { img.style.opacity = '1'; };
+  overlay.classList.add('open');
+}
+
+function closeLb() {
+  document.getElementById('lbOverlay').classList.remove('open');
+  document.getElementById('lbImg').src = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLb(); });
+
+
 // Connection status update
 function setConn(state) {
   const pill  = document.getElementById('connPill');
@@ -593,16 +738,6 @@ function setConn(state) {
   label.textContent = { online:'LIVE', offline:'OFFLINE', connecting:'CONNECTING' }[state] || 'CONNECTING';
 }
 
-// Initial boot sequence: load fleet data, then init map and SSE
-async function boot() {
-  setConn('connecting');
-  await loadFleet();
-  // Defer so #fleetMap has layout before Leaflet measures it
-  setTimeout(() => {
-    initFleetMap();
-    openFleetSse();
-  }, 0);
-}
 
 // ────────────────────────────────────────────
 //  Fleet
@@ -683,7 +818,8 @@ function renderList() {
       ? `${(+e.lat).toFixed(4)}, ${(+e.lng).toFixed(4)}`
       : 'No GPS fix';
     return `<div class="ecard${currentKey === e.device_key ? ' active-row' : ''}"
-                 data-key="${e.device_key}" onclick="showDetail('${e.device_key}')">
+             style="${mv.state === 'alert' ? 'background:var(--red-bg);border-left:3px solid var(--red);' : ''}"
+             data-key="${e.device_key}" onclick="showDetail('${e.device_key}')">
       <div class="ecard-num">${i + 1}</div>
       <div class="ecard-avatar ${mv.state}">${e.tag || e.device_key.slice(-2)}</div>
       <div class="ecard-info">
@@ -714,8 +850,15 @@ function updateListRow(idx) {
   row.querySelector('.ecard-tag').textContent  = coords;
   row.querySelector('.ecard-status').className = `ecard-status ${mv.state}`;
   row.querySelector('.ecard-status').textContent = mv.label;
+  // Flash the whole row red on impact
+  if (mv.state === 'alert') {
+    row.style.background = 'var(--red-bg)';
+    row.style.borderLeft = '3px solid var(--red)';
+  } else {
+    row.style.background = '';
+    row.style.borderLeft = '';
+  }
 }
-
 // ────────────────────────────────────────────
 //  Fleet Map
 // ────────────────────────────────────────────
@@ -735,22 +878,44 @@ function markerHtml(state) {
 }
 
 function addFleetMarker(e) {
-    if(!fleetMap) return;
+  if (!fleetMap) return;
   if (!e.lat || !e.lng) return;
-  const mv   = movementInfo(e);
-  const icon = L.divIcon({ className: '', html: markerHtml(mv.state), iconSize: [13,13], iconAnchor: [6,6] });
+  const mv = movementInfo(e);
+  const color = mv.state === 'alert' ? '#c0392b' : mv.state === 'offline' ? '#6b7a8d' : '#0a6ebf';
+  const html = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <div style="background:${color};color:#fff;font-family:'IBM Plex Mono',monospace;
+                  font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;
+                  white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">
+        ${e.name}
+      </div>
+      <div style="width:11px;height:11px;border-radius:50%;background:${color};
+                  border:2px solid #fff;box-shadow:0 0 0 2px ${color}44;"></div>
+    </div>`;
+  const icon = L.divIcon({ className: '', html, iconSize: [null, null], iconAnchor: [null, 13] });
   fleetMarkers[e.device_key] = L.marker([+e.lat, +e.lng], { icon })
     .addTo(fleetMap)
-    .bindTooltip(`<b>${e.name}</b> ${e.tag}`, { permanent: false, direction: 'top' })
+    .bindTooltip(`<b>${e.name}</b> — ${e.tag}`, { permanent: false, direction: 'top' })
     .on('click', () => showDetail(e.device_key));
 }
 
 function updateFleetMarker(e) {
-    if(!fleetMap) return;
+  if (!fleetMap) return;
   if (!e.lat || !e.lng) return;
   if (!fleetMarkers[e.device_key]) { addFleetMarker(e); return; }
-  const mv   = movementInfo(e);
-  const icon = L.divIcon({ className: '', html: markerHtml(mv.state), iconSize: [13,13], iconAnchor: [6,6] });
+  const mv = movementInfo(e);
+  const color = mv.state === 'alert' ? '#c0392b' : mv.state === 'offline' ? '#6b7a8d' : '#0a6ebf';
+  const html = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <div style="background:${color};color:#fff;font-family:'IBM Plex Mono',monospace;
+                  font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;
+                  white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.25);">
+        ${e.name}
+      </div>
+      <div style="width:11px;height:11px;border-radius:50%;background:${color};
+                  border:2px solid #fff;box-shadow:0 0 0 2px ${color}44;"></div>
+    </div>`;
+  const icon = L.divIcon({ className: '', html, iconSize: [null, null], iconAnchor: [null, 13] });
   fleetMarkers[e.device_key].setLatLng([+e.lat, +e.lng]).setIcon(icon);
 }
 
@@ -815,7 +980,28 @@ async function showDetail(key) {
       setTxt('d-pts', detailPts.length);
     }
   } catch {}
-
+  
+try {
+  const res = await fetch(`${SERVER}/api/elephant/${key}/frames?limit=30`);
+  if (res.ok) {
+    const frames = await res.json();
+    const groups = [];
+    frames.forEach(f => {
+      const fTime = new Date(f.ts).getTime();
+      const last = groups[groups.length - 1];
+      if (last && Math.abs(fTime - last._time) < 20000) {
+        last.frames.push(f);
+      } else {
+        groups.push({ ts: fmtTs(f.ts), frames: [f], _time: fTime });
+      }
+    });
+    groups.reverse().forEach(g => {
+      detailHistory.unshift({ ts: g.ts, frames: g.frames, _time: g._time });
+    });
+    if (detailHistory.length > 30) detailHistory.length = 30;
+    renderDetailHistory();
+  }
+} catch (err) { console.warn('[detail] frames load failed:', err.message); }
   openDetailSse(key);
 }
 
@@ -940,13 +1126,13 @@ function renderDetailCams() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <rect x="2" y="4" width="20" height="16" rx="2"/><circle cx="12" cy="12" r="4"/>
           </svg>
-          <div style="font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);margin-top:4px;">CAM-0${id} — No frame</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);margin-top:4px;">CAM-${ ['LEFT','CENTER','RIGHT'][id] } — No frame</div>
         </div>
       </div>`;
     return `
-      <div class="live-cam" id="livecam-${id}">
+       <div class="live-cam" id="livecam-${id}" onclick="openLb('${f.url}', ${id === 0}, event)" style="cursor:zoom-in;">
         <img src="${f.url}" alt="CAM-0${id}" loading="lazy" style="${id === 0 ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToContainer(this.closest('.live-cam'))">
-        <div class="cam-overlay-id">CAM-0${id}</div>
+        <div class="cam-overlay-id">CAM-${ ['LEFT','CENTER','RIGHT'][id] }</div>
         <div class="cam-overlay-ts">${f.ts}</div>
         <div class="cam-live-badge"><div class="cam-live-dot"></div>LIVE</div>
         <div class="cam-corner cam-tl"></div><div class="cam-corner cam-tr"></div>
@@ -985,9 +1171,9 @@ function renderDetailHistory() {
       <div class="hist-row">
         ${g.frames.map(f => {
           const url = f.url.startsWith('http') ? f.url : SERVER + f.url;
-          return `<div class="hist-thumb">
+          return `<div class="hist-thumb" onclick="openLb('${url}', ${f.camId === 0}, event)">
             <img src="${url}" loading="lazy"  style="${f.camId === 0 ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToImg(this)">
-            <div class="hist-thumb-id">CAM-0${f.camId}</div>
+            <div class="hist-thumb-id">CAM-${ ['LEFT','CENTER','RIGHT'][f.camId] || ('CAM-'+f.camId) }</div>
             <div class="hist-thumb-ts">${g.ts}</div>
           </div>`;
         }).join('')}
@@ -1009,6 +1195,211 @@ function fmtTs(ts) {
 }
 
 boot();
+
+function logout() {
+  fetch('/api/auth/logout', { method: 'POST' })
+    .then(() => window.location.href = '/login.html');
+}
+
+function openPersonnelModal() {
+  const e = fleetData.find(e => e.device_key === currentKey);
+  if (!e) return;
+
+  const meta = e.meta || {};
+  const pol  = meta.police || {};
+  const fr   = meta.forest || {};
+  const mah  = meta.mahout || {};
+
+  // Header
+  setTxt('pm-elname', e.name);
+
+  // Police
+  setTxt('pm-pol-name',  pol.name        || '—');
+  setTxt('pm-pol-desig', pol.designation || '—');
+  setTxt('pm-pol-phone-txt', pol.phone   || '—');
+  const polA = document.getElementById('pm-pol-phone');
+  if (polA) polA.href = pol.phone ? `tel:${pol.phone.replace(/\s/g,'')}` : '#';
+
+  // Forest
+  setTxt('pm-for-name',  fr.name         || '—');
+  setTxt('pm-for-desig', fr.designation  || '—');
+  setTxt('pm-for-phone-txt', fr.phone    || '—');
+  const forA = document.getElementById('pm-for-phone');
+  if (forA) forA.href = fr.phone ? `tel:${fr.phone.replace(/\s/g,'')}` : '#';
+
+  // Mahout
+  setTxt('pm-mah-name', mah.name         || '—');
+  setTxt('pm-mah-phone-txt', mah.phone   || '—');
+  const mahA = document.getElementById('pm-mah-phone');
+  if (mahA) mahA.href = mah.phone ? `tel:${mah.phone.replace(/\s/g,'')}` : '#';
+
+  // Show empty state if nothing filled
+  const hasData = pol.name || fr.name || mah.name;
+  document.getElementById('pm-empty').style.display = hasData ? 'none' : 'block';
+
+  // Open modal
+  const modal = document.getElementById('personnelModal');
+  modal.style.display = 'flex';
+  document.addEventListener('keydown', personnelEscHandler);
+}
+
+function closePersonnelModal() {
+  document.getElementById('personnelModal').style.display = 'none';
+  document.removeEventListener('keydown', personnelEscHandler);
+}
+
+function personnelEscHandler(e) {
+  if (e.key === 'Escape') closePersonnelModal();
+}
 </script>
+
+<div id="lbOverlay" onclick="closeLb()">
+  <button id="lbClose" onclick="closeLb()">✕ CLOSE</button>
+  <img id="lbImg" src="" alt="Enlarged frame">
+</div>
+
+<!-- Personnel Modal -->
+<div id="personnelModal" onclick="closePersonnelModal()" style="
+  display:none;position:fixed;inset:0;z-index:9998;
+  background:rgba(0,0,0,.6);backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;">
+
+  <div onclick="event.stopPropagation()" style="
+    background:var(--surface);border-radius:14px;
+    width:min(560px,94vw);max-height:85vh;
+    overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.3);
+    border:1.5px solid var(--border);">
+
+    <!-- Modal header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:14px 20px;border-bottom:1.5px solid var(--border);
+                position:sticky;top:0;background:var(--surface);z-index:1;">
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;
+                    letter-spacing:3px;color:var(--dim);text-transform:uppercase;">
+          Personnel · Contact
+        </div>
+        <div style="font-size:.88rem;font-weight:700;margin-top:2px;" id="pm-elname">—</div>
+      </div>
+      <button onclick="closePersonnelModal()" style="
+        border:none;background:none;cursor:pointer;
+        font-family:'IBM Plex Mono',monospace;font-size:.6rem;
+        color:var(--dim);padding:4px 8px;border-radius:5px;
+        border:1px solid var(--border);">✕ CLOSE</button>
+    </div>
+
+    <!-- Modal body -->
+    <div style="padding:20px;display:flex;flex-direction:column;gap:20px;">
+
+      <!-- Police -->
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:.42rem;
+                    letter-spacing:2px;text-transform:uppercase;font-weight:700;
+                    color:var(--accent);border-bottom:1.5px solid var(--border);
+                    padding-bottom:6px;margin-bottom:12px;">
+          ◈ Police Personnel
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Name</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+                         font-weight:600;color:var(--text);" id="pm-pol-name">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Designation</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.6rem;
+                         color:var(--text);" id="pm-pol-desig">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Phone</span>
+            <a id="pm-pol-phone" href="#" style="font-family:'IBM Plex Mono',monospace;
+               font-size:.65rem;color:var(--accent);text-decoration:none;
+               display:flex;align-items:center;gap:5px;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.82a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              <span id="pm-pol-phone-txt">—</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div style="height:1px;background:var(--border);"></div>
+
+      <!-- Forest -->
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:.42rem;
+                    letter-spacing:2px;text-transform:uppercase;font-weight:700;
+                    color:var(--green);border-bottom:1.5px solid var(--border);
+                    padding-bottom:6px;margin-bottom:12px;">
+          ◈ Forest Personnel
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Name</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+                         font-weight:600;color:var(--text);" id="pm-for-name">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Designation</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.6rem;
+                         color:var(--text);" id="pm-for-desig">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Phone</span>
+            <a id="pm-for-phone" href="#" style="font-family:'IBM Plex Mono',monospace;
+               font-size:.65rem;color:var(--accent);text-decoration:none;
+               display:flex;align-items:center;gap:5px;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.82a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              <span id="pm-for-phone-txt">—</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div style="height:1px;background:var(--border);"></div>
+
+      <!-- Mahout -->
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:.42rem;
+                    letter-spacing:2px;text-transform:uppercase;font-weight:700;
+                    color:var(--orange);border-bottom:1.5px solid var(--border);
+                    padding-bottom:6px;margin-bottom:12px;">
+          ◈ Mahout
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Name</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.68rem;
+                         font-weight:600;color:var(--text);" id="pm-mah-name">—</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:.46rem;color:var(--dim);">Phone</span>
+            <a id="pm-mah-phone" href="#" style="font-family:'IBM Plex Mono',monospace;
+               font-size:.65rem;color:var(--accent);text-decoration:none;
+               display:flex;align-items:center;gap:5px;">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.4 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.82a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+              <span id="pm-mah-phone-txt">—</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div id="pm-empty" style="display:none;text-align:center;padding:20px;
+           font-family:'IBM Plex Mono',monospace;font-size:.55rem;color:var(--dim);">
+        No personnel details added yet.
+      </div>
+
+    </div>
+  </div>
+</div>
 </body>
 </html>

@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/a8222b80-a061-4337-8a38-039221d5c1ec/resourceGroups/scopx-rathyatra/providers/Microsoft.Web/sites/scopx-rathyatra",
+    "appService.deploySubpath": "."
+}
