@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Gajarakshak — Elephant Monitoring</title>
+<title>Gajaraxak — Elephant Monitoring</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -249,7 +249,7 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
     </div>
     <div class="brand-divider"></div>
     <div>
-      <div class="brand-name">Gajarakshak Nirixana</div>
+      <div class="brand-name">Gajaraxak Nirixana</div>
       <div class="brand-sub">ELEPHANT TELEMETRY SYSTEM · SCOPX INTERACTIVE SYSTEMS</div>
     </div>
   </a>
@@ -468,6 +468,14 @@ let detailTrack     = null;
 let detailPts       = [];
 let detailFrames    = { 0: null, 1: null, 2: null };
 let detailHistory   = [];
+
+const INVERTED_CAM0_DEVICES = new Set([
+  ''   
+]);
+
+function isCamInverted(deviceKey, camId) {
+  return camId === 0 && INVERTED_CAM0_DEVICES.has(deviceKey);
+}
 
 
 // SPEED GRAPH — maintain a rolling history of gyro magnitudes and draw on canvas
@@ -1129,9 +1137,10 @@ function renderDetailCams() {
           <div style="font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);margin-top:4px;">CAM-${ ['LEFT','CENTER','RIGHT'][id] } — No frame</div>
         </div>
       </div>`;
+      const inverted = isCamInverted(currentKey, id);
     return `
-       <div class="live-cam" id="livecam-${id}" onclick="openLb('${f.url}', ${id === 0}, event)" style="cursor:zoom-in;">
-        <img src="${f.url}" alt="CAM-0${id}" loading="lazy" style="${id === 0 ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToContainer(this.closest('.live-cam'))">
+       <div class="live-cam" id="livecam-${id}" onclick="openLb('${f.url}', ${inverted}, event)" style="cursor:zoom-in;">
+        <img src="${f.url}" alt="CAM-0${id}" loading="lazy" style="${inverted ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToContainer(this.closest('.live-cam'))">
         <div class="cam-overlay-id">CAM-${ ['LEFT','CENTER','RIGHT'][id] }</div>
         <div class="cam-overlay-ts">${f.ts}</div>
         <div class="cam-live-badge"><div class="cam-live-dot"></div>LIVE</div>
@@ -1171,8 +1180,9 @@ function renderDetailHistory() {
       <div class="hist-row">
         ${g.frames.map(f => {
           const url = f.url.startsWith('http') ? f.url : SERVER + f.url;
-          return `<div class="hist-thumb" onclick="openLb('${url}', ${f.camId === 0}, event)">
-            <img src="${url}" loading="lazy"  style="${f.camId === 0 ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToImg(this)">
+          const inverted = isCamInverted(currentKey, f.camId);
+          return `<div class="hist-thumb" onclick="openLb('${url}', ${inverted}, event)">
+            <img src="${url}" loading="lazy"  style="${inverted ? 'transform:rotate(180deg);' : ''}" onload="applyWatermarkToImg(this)">
             <div class="hist-thumb-id">CAM-${ ['LEFT','CENTER','RIGHT'][f.camId] || ('CAM-'+f.camId) }</div>
             <div class="hist-thumb-ts">${g.ts}</div>
           </div>`;
