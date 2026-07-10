@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Gajarakshak — Personnel</title>
+<title>Gajaraxak — Personnel</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 <style>
 :root{--bg:#f0f2f5;--surface:#fff;--border:#d0d7de;--text:#1a2332;--dim:#6b7a8d;
@@ -62,6 +62,33 @@ main{max-width:860px;margin:0 auto;padding:24px 16px;}
   font-family:'IBM Plex Mono',monospace;font-size:.65rem;color:var(--text);outline:none;}
 .f input:focus{border-color:var(--accent);}
 
+/* photo/document upload + preview (multiple attachments) */
+.photo-row{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap;}
+.photo-thumb{width:56px;height:56px;object-fit:cover;border-radius:7px;
+  border:1.5px solid var(--border);background:#eef1f4;display:block;}
+.photo-thumb.doc{display:flex;align-items:center;justify-content:center;
+  font-family:'IBM Plex Mono',monospace;font-size:.5rem;color:var(--dim);
+  text-decoration:none;font-weight:600;}
+.photo-empty{width:56px;height:56px;border-radius:7px;border:1.5px dashed var(--border);
+  display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;
+  font-size:.42rem;color:var(--dim);text-align:center;line-height:1.3;padding:4px;}
+.photo-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.photo-list{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.photo-item{position:relative;}
+.photo-item .btn-remove{position:absolute;top:-6px;right:-6px;padding:2px 5px;font-size:.42rem;border-radius:50%;line-height:1;}
+.photo-controls input[type=file]{font-family:'IBM Plex Mono',monospace;font-size:.5rem;max-width:150px;}
+.btn-upload{padding:6px 12px;border:1.5px solid var(--border);border-radius:6px;
+  background:var(--surface);font-family:'IBM Plex Mono',monospace;font-size:.5rem;
+  font-weight:600;cursor:pointer;letter-spacing:.5px;color:var(--text);}
+.btn-upload:hover{background:var(--accent-light);border-color:var(--accent);}
+.btn-remove{padding:6px 10px;border:1.5px solid var(--red);border-radius:6px;
+  background:var(--red-bg);font-family:'IBM Plex Mono',monospace;font-size:.5rem;
+  font-weight:600;cursor:pointer;color:var(--red);}
+.btn-remove:hover{background:var(--red);color:#fff;}
+.upload-status{font-family:'IBM Plex Mono',monospace;font-size:.46rem;}
+.upload-status.ok{color:var(--green);}
+.upload-status.err{color:var(--red);}
+
 .el-footer{display:flex;align-items:center;justify-content:space-between;
   padding-top:14px;border-top:1px solid var(--border);margin-top:4px;}
 .save-msg{font-family:'IBM Plex Mono',monospace;font-size:.52rem;}
@@ -81,7 +108,7 @@ main{max-width:860px;margin:0 auto;padding:24px 16px;}
 
 <header>
   <div>
-    <div class="brand-name">Gajarakshak — Personnel</div>
+    <div class="brand-name">Gajaraxak — Personnel</div>
     <div class="brand-sub">ADMIN CRIME BRANCH · SCOPX INTERACTIVE SYSTEMS</div>
   </div>
   <div class="hdr-right">
@@ -99,6 +126,9 @@ main{max-width:860px;margin:0 auto;padding:24px 16px;}
 </main>
 
 <script>
+const ALLOWED_MIME = ['image/jpeg','image/jpg','image/png','image/webp','application/pdf'];
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8MB, must match server limit
+
 // Auth check
 async function init() {
   const res = await fetch('/api/auth/me');
@@ -115,12 +145,38 @@ async function loadDevices() {
   render(devices);
 }
 
+function attachmentThumbHtml(k, att) {
+  const isImg = /\.(jpg|jpeg|png|webp)$/i.test(att.photo);
+  const inner = isImg
+    ? `<a href="${att.photo}" target="_blank"><img class="photo-thumb" src="${att.photo}"/></a>`
+    : `<a href="${att.photo}" target="_blank" class="photo-thumb doc">PDF</a>`;
+  return `
+    <div class="photo-item" id="att-${att.id}">
+      ${inner}
+      <button class="btn-remove" onclick="removeFile('${k}','${att.id}')">✕</button>
+    </div>`;
+}
+
+function attachmentBlockHtml(k, attachments) {
+  const items = (attachments || []).map(att => attachmentThumbHtml(k, att)).join('');
+  return `
+    <div class="photo-row" id="${k}-att-photo-row">
+      <div class="photo-list" id="${k}-att-list">${items || '<div class="photo-empty">No files</div>'}</div>
+      <div class="photo-controls">
+        <input type="file" id="${k}-att-file" accept="image/jpeg,image/png,image/webp,application/pdf"/>
+        <button class="btn-upload" onclick="uploadFile('${k}')">UPLOAD</button>
+        <span class="upload-status" id="${k}-att-upload-status"></span>
+      </div>
+    </div>`;
+}
+
 function render(devices) {
   document.getElementById('formList').innerHTML = devices.map((d, i) => {
     const m   = d.meta   || {};
     const pol = m.police || {};
     const fr  = m.forest || {};
     const mah = m.mahout || {};
+    const att = Array.isArray(m.attachments) ? m.attachments : []; // FIX: use attachments array, not old m.attachment
     const k   = d.device_key;
     return `
     <div class="el-card">
@@ -178,9 +234,14 @@ function render(devices) {
             </div>
             <div class="f">
               <label>Phone</label>
-              <input id="${k}-mah-phone" value="${mah.phone||''}" placeholder="+91 XXXXX XXXXX" type="tel"/>
+              <input id="${k}-mah-phone" value="${mah.phone||''}" placeholder="+91 XXXXX XXXXX"/>
             </div>
           </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-label" style="color:var(--dim);">◈ Attached Photo / Document</div>
+          ${attachmentBlockHtml(k, att)}
         </div>
 
         <div class="el-footer">
@@ -206,10 +267,23 @@ async function save(k) {
   btn.textContent = 'SAVING…';
   msg.textContent = '';
 
+  // Re-fetch current meta first so we don't clobber any photo fields
+  // that were set via the upload endpoint since the page last loaded.
+  let existingMeta = {};
+  try {
+    const cur = await fetch('/api/admin/devices');
+    if (cur.ok) {
+      const list = await cur.json();
+      const found = list.find(d => d.device_key === k);
+      existingMeta = found?.meta || {};
+    }
+  } catch (_) { /* fall back to blank photo fields if this fails */ }
+
   const meta = {
-    police: { name: g(`${k}-pol-name`), designation: g(`${k}-pol-desig`), phone: g(`${k}-pol-phone`) },
-    forest: { name: g(`${k}-for-name`), designation: g(`${k}-for-desig`), phone: g(`${k}-for-phone`) },
-    mahout: { name: g(`${k}-mah-name`), phone: g(`${k}-mah-phone`) }
+    police: { ...(existingMeta.police||{}), name: g(`${k}-pol-name`), designation: g(`${k}-pol-desig`), phone: g(`${k}-pol-phone`) },
+    forest: { ...(existingMeta.forest||{}), name: g(`${k}-for-name`), designation: g(`${k}-for-desig`), phone: g(`${k}-for-phone`) },
+    mahout: { ...(existingMeta.mahout||{}), name: g(`${k}-mah-name`), phone: g(`${k}-mah-phone`) },
+    ...(existingMeta.attachments ? { attachments: existingMeta.attachments } : {})
   };
 
   try {
@@ -232,6 +306,89 @@ async function save(k) {
     btn.textContent = 'SAVE';
     setTimeout(() => { msg.textContent = ''; }, 3000);
   }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadFile(k) {
+  const input    = document.getElementById(`${k}-att-file`);
+  const statusEl = document.getElementById(`${k}-att-upload-status`);
+  const file = input.files[0];
+
+  if (!file) {
+    statusEl.textContent = 'Choose a file first';
+    statusEl.className = 'upload-status err';
+    return;
+  }
+  if (!ALLOWED_MIME.includes(file.type)) {
+    statusEl.textContent = 'Unsupported type (use JPG/PNG/WEBP/PDF)';
+    statusEl.className = 'upload-status err';
+    return;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    statusEl.textContent = 'Max file size is 8MB';
+    statusEl.className = 'upload-status err';
+    return;
+  }
+
+  statusEl.textContent = 'Uploading…';
+  statusEl.className = 'upload-status';
+
+  try {
+    const dataB64 = await fileToBase64(file);
+    const res = await fetch(`/api/admin/devices/${k}/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, mimetype: file.type, data: dataB64 })
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || 'Upload failed');
+
+    const listEl = document.getElementById(`${k}-att-list`);
+    const empty = listEl.querySelector('.photo-empty');
+    if (empty) empty.remove();
+    listEl.insertAdjacentHTML('beforeend', attachmentThumbHtml(k, json.attachment));
+
+    statusEl.textContent = '✓ Uploaded';
+    statusEl.className = 'upload-status ok';
+    input.value = '';
+  } catch (err) {
+    statusEl.textContent = '✗ ' + err.message;
+    statusEl.className = 'upload-status err';
+  }
+  setTimeout(() => { statusEl.textContent = ''; }, 3000);
+}
+
+async function removeFile(k, id) {
+  const statusEl = document.getElementById(`${k}-att-upload-status`);
+  statusEl.textContent = 'Removing…';
+  statusEl.className = 'upload-status';
+  try {
+    const res = await fetch(`/api/admin/devices/${k}/upload/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Remove failed');
+
+    const item = document.getElementById(`att-${id}`);
+    if (item) item.remove();
+
+    const listEl = document.getElementById(`${k}-att-list`);
+    if (listEl && !listEl.children.length) {
+      listEl.innerHTML = '<div class="photo-empty">No files</div>';
+    }
+
+    statusEl.textContent = '✓ Removed';
+    statusEl.className = 'upload-status ok';
+  } catch (err) {
+    statusEl.textContent = '✗ ' + err.message;
+    statusEl.className = 'upload-status err';
+  }
+  setTimeout(() => { statusEl.textContent = ''; }, 3000);
 }
 
 function logout() {

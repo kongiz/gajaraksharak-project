@@ -9,8 +9,10 @@ const bcrypt   = require('bcryptjs');
 
 const PORT       = process.env.PORT || 3000;
 const FRAMES_DIR = path.join(__dirname, 'public', 'frames');
+const UPLOADS_DIR = path.join(__dirname, 'public', 'personnel_uploads'); // NEW: personnel photo/doc uploads
 
 if (!fs.existsSync(FRAMES_DIR)) fs.mkdirSync(FRAMES_DIR, { recursive: true });
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true }); // NEW
 
 const connectionString = process.env.DATABASE_URL
   || 'postgresql://ryuser:Lastresort61$@scopx-ry.postgres.database.azure.com/Gejarastra?sslmode=require';
@@ -74,7 +76,9 @@ const app    = express();
 const server = http.createServer(app);
 
 // ── Middleware in correct order ──
-app.use(express.json());
+// NOTE: limit raised from the default 100kb so base64-encoded personnel
+// photos/PDFs (up to ~8MB binary => ~11MB base64) can be POSTed as JSON.
+app.use(express.json({ limit: '15mb' }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'gajarakshak-scopx-2024',
   resave: false,
@@ -155,6 +159,7 @@ app.get('/personnel.html', requireLogin, requireAdmin, (req, res) => {
 // ── Static files (login.html is public) ──
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/frames', express.static(FRAMES_DIR));
+app.use('/personnel_uploads', express.static(UPLOADS_DIR)); // NEW: serve uploaded photos/docs
 
 // ── Admin routes ──
 app.get('/api/admin/devices', requireLogin, requireAdmin, async (req, res) => {
@@ -177,6 +182,99 @@ app.patch('/api/admin/devices/:key/meta', requireLogin, requireAdmin, async (req
     device.meta = req.body;
     deviceCache.set(req.params.key, device);
     res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── NEW: Personnel photo / document upload ──
+// Accepts JSON: { section: 'police'|'forest'|'mahout', filename, mimetype, data (base64) }
+// Stores the file on disk under /public/personnel_uploads and records its URL
+// at meta[section].photo (kept alongside meta[section].name/designation/phone).
+const ALLOWED_UPLOAD_TYPES = {
+  'image/jpeg': '.jpg',
+  'image/jpg':  '.jpg',
+  'image/png':  '.png',
+  'image/webp': '.webp',
+  'application/pdf': '.pdf'
+};
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024; // 8MB
+// One attachment per elephant (not per police/forest/mahout role), stored at meta.attachment
+const ATTACHMENT_KEY = 'attachment';
+
+app.post('/api/admin/devices/:key/upload', requireLogin, requireAdmin, async (req, res) => {
+  const { filename, mimetype, data } = req.body || {};
+
+  if (!data || !mimetype)
+    return res.status(400).json({ error: 'Missing file data' });
+
+  const ext = ALLOWED_UPLOAD_TYPES[mimetype.toLowerCase()];
+  if (!ext)
+    return res.status(400).json({ error: 'Unsupported file type. Use JPG, PNG, WEBP, or PDF.' });
+
+  const device = await resolveDevice(req.params.key);
+  if (!device) return res.status(404).json({ error: 'unknown device' });
+
+  try {
+    const buf = Buffer.from(data, 'base64');
+    if (!buf.length)
+      return res.status(400).json({ error: 'Empty file' });
+    if (buf.length > MAX_UPLOAD_BYTES)
+      return res.status(400).json({ error: 'File too large (max 8MB)' });
+
+    // NOTE: no longer deletes the previous file — attachments now accumulate in an array
+    const meta = { ...(device.meta || {}) };
+    const attachments = Array.isArray(meta.attachments) ? [...meta.attachments] : [];
+
+    const attId    = `att_${device.id}_${Date.now()}`;
+    const safeName = `${device.id}_${attId}${ext}`;
+    fs.writeFileSync(path.join(UPLOADS_DIR, safeName), buf);
+
+    const url = `/personnel_uploads/${safeName}`;
+    const entry = {
+      id:        attId,
+      photo:     url,
+      photoFile: safeName,
+      photoName: String(filename || safeName).slice(0, 120),
+      photoType: mimetype
+    };
+    attachments.push(entry);
+    meta.attachments = attachments;
+
+    await pool.query(`UPDATE devices SET meta = $1 WHERE id = $2`, [JSON.stringify(meta), device.id]);
+    device.meta = meta;
+    deviceCache.set(req.params.key, device);
+
+    console.log(`[UPLOAD] ${device.name} · ${safeName} (${buf.length}b)`);
+    res.json({ ok: true, url, attachment: entry, attachments });
+  } catch (err) {
+    console.error('[UPLOAD] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+// ── NEW: Remove the elephant's attached photo/document ──
+app.delete('/api/admin/devices/:key/upload/:id', requireLogin, requireAdmin, async (req, res) => {
+  const device = await resolveDevice(req.params.key);
+  if (!device) return res.status(404).json({ error: 'unknown device' });
+
+  try {
+    const meta = { ...(device.meta || {}) };
+    const attachments = Array.isArray(meta.attachments) ? [...meta.attachments] : [];
+    const idx = attachments.findIndex(a => a.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'attachment not found' });
+
+    const [removed] = attachments.splice(idx, 1);
+    if (removed?.photoFile) {
+      const prevPath = path.join(UPLOADS_DIR, removed.photoFile);
+      if (fs.existsSync(prevPath)) {
+        try { fs.unlinkSync(prevPath); } catch (_) { /* non-fatal */ }
+      }
+    }
+    meta.attachments = attachments;
+
+    await pool.query(`UPDATE devices SET meta = $1 WHERE id = $2`, [JSON.stringify(meta), device.id]);
+    device.meta = meta;
+    deviceCache.set(req.params.key, device);
+
+    res.json({ ok: true, attachments });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -182,13 +182,9 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
 .badge-purple{background:#f0eeff;border-color:#7c6fcd;color:#5b4fcf;}
 .badge-blue{background:var(--accent-light);border-color:var(--accent);color:var(--accent);}
 
-/* ══ SPEED GRAPH ══ */
-.speed-graph-wrap{padding:8px 12px 10px;}
-.speed-graph-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
-.speed-cur{font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:var(--accent);}
-.speed-unit{font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:var(--dim);margin-left:3px;}
-.speed-range{font-family:'IBM Plex Mono',monospace;font-size:.42rem;color:var(--dim);}
-#speedCanvas{width:100%;height:52px;display:block;border-radius:4px;}
+/* ══ SPEED GAUGE ══ */
+.gauge-wrap{padding:6px 12px 10px;display:flex;flex-direction:column;align-items:center;}
+#speedGaugeCanvas{width:100%;max-width:280px;height:150px;display:block;}
 
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:var(--border2);}
 
@@ -237,6 +233,20 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
 #personnelModal [style*='font-family:"IBM Plex Mono"'] {
   font-size: 1em !important;
 }
+
+/* ── Attachment viewer (personnel modal) ── */
+.pm-att-thumb{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1.5px solid var(--border);cursor:zoom-in;flex-shrink:0;background:#eef1f4;}
+.pm-att-doc{width:64px;height:64px;border-radius:8px;border:1.5px solid var(--border);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;background:var(--red-bg);color:var(--red);text-decoration:none;flex-shrink:0;}
+.pm-att-doc svg{width:20px;height:20px;margin-bottom:2px;}
+.pm-att-doc span{font-family:'IBM Plex Mono',monospace;font-size:.4rem;font-weight:700;letter-spacing:1px;}
+.pm-att-none{width:64px;height:64px;border-radius:8px;border:1.5px dashed var(--border);display:flex;align-items:center;
+  justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:.4rem;color:var(--dim);text-align:center;
+  line-height:1.3;padding:4px;flex-shrink:0;}
+.pm-att-info{display:flex;flex-direction:column;gap:4px;min-width:0;}
+.pm-att-name{font-family:'IBM Plex Mono',monospace;font-size:.6rem;color:var(--text);font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;}
+.pm-att-open{font-family:'IBM Plex Mono',monospace;font-size:.52rem;color:var(--accent);text-decoration:none;}
 </style>
 </head>
 <body>
@@ -390,18 +400,11 @@ header{position:sticky;top:0;z-index:500;display:flex;align-items:center;justify
           </div>
         </div>
 
-        <!-- ══ SPEED GRAPH replaces old Speed Indicator ══ -->
+        <!-- ══ SPEED GAUGE ══ -->
         <div class="sp">
-          <div class="sp-head"><span class="sp-title">Speed Indicator</span><span class="sp-badge badge-purple">rad/s · live</span></div>
-          <div class="speed-graph-wrap">
-            <div class="speed-graph-head">
-              <div>
-                <span class="speed-cur" id="d-speedCur">0.00</span>
-                <span class="speed-unit">rad/s mag</span>
-              </div>
-              <span class="speed-range" id="d-speedRange">60 s window</span>
-            </div>
-            <canvas id="speedCanvas" height="52"></canvas>
+          <div class="sp-head"><span class="sp-title">Speed Indicator</span><span class="sp-badge badge-purple" id="d-speedBadge">km/h · live</span></div>
+          <div class="gauge-wrap">
+            <canvas id="speedGaugeCanvas"></canvas>
           </div>
         </div>
 
@@ -478,146 +481,144 @@ function isCamInverted(deviceKey, camId) {
 }
 
 
-// SPEED GRAPH — maintain a rolling history of gyro magnitudes and draw on canvas
-const SPEED_MAX_PTS = 60;
-let speedHistory = [];  // array of gyro magnitudes
+// ────────────────────────────────────────────
+//  SPEED GAUGE — GPS-derived speed in km/h
+// ────────────────────────────────────────────
+const GAUGE_MAX_KMH = 30;      // full-scale value on the dial
+let lastGpsFix   = null;       // { lat, lng, t } of previous fix for currentKey
+let smoothedKmh  = 0;          // exponentially-smoothed speed shown on the gauge
 
-async function boot() {
-  // Check auth first
-  const meRes = await fetch('/api/auth/me');
-  if (!meRes.ok) {
-    window.location.href = '/login.html';
-    return;
-  }
-  const user = await meRes.json();
-  window.currentUser = user;
-
-  // Show department name
-  const label = document.getElementById('userLabel');
-  if (label) label.textContent = user.name;
-
-  // Show PERSONNEL button only for admin
-  if (user.role === 'admin') {
-    const btn = document.getElementById('personnelBtn');
-    if (btn) btn.style.display = 'flex';
-  }
-
-  setConn('connecting');
-  await loadFleet();
-  setTimeout(() => { initFleetMap(); openFleetSse(); }, 0);
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// function logout() {
-//   fetch('/api/auth/logout', { method: 'POST' })
-//     .then(() => window.location.href = '/login.html');
-// }
+// Called whenever a fresh GPS-valid reading arrives for the elephant on screen
+function updateGpsSpeed(lat, lng, tsRaw) {
+  const t = tsRaw ? new Date(tsRaw).getTime() : Date.now();
+  let instKmh = null;
 
-function pushSpeedPoint(gx, gy, gz) {
-  const mag = Math.sqrt((+gx)**2 + (+gy)**2 + (+gz)**2);
-  speedHistory.push(mag);
-  if (speedHistory.length > SPEED_MAX_PTS) speedHistory.shift();
-  document.getElementById('d-speedCur').textContent = mag.toFixed(2);
-  drawSpeedGraph();
+  if (lastGpsFix && t > lastGpsFix.t) {
+    const dtSec = (t - lastGpsFix.t) / 1000;
+    // Ignore stale/duplicate pushes and long gaps (device offline, page just opened)
+    if (dtSec > 0.5 && dtSec < 60) {
+      const distM = haversineMeters(lastGpsFix.lat, lastGpsFix.lng, lat, lng);
+      instKmh = (distM / dtSec) * 3.6;
+      if (instKmh > 60) instKmh = null; // discard GPS-jump artifacts
+    }
+  }
+  lastGpsFix = { lat, lng, t };
+
+  if (instKmh != null) {
+    // Exponential smoothing so the needle doesn't jitter fix-to-fix
+    smoothedKmh = smoothedKmh * 0.65 + instKmh * 0.35;
+  } else {
+    // No fresh delta to compute from — decay gently toward 0 (elephant likely stationary)
+    smoothedKmh = smoothedKmh * 0.85;
+  }
+  if (smoothedKmh < 0.15) smoothedKmh = 0;
+
+  drawSpeedGauge(smoothedKmh);
 }
 
-function drawSpeedGraph() {
-  const canvas = document.getElementById('speedCanvas');
+function drawSpeedGauge(valueKmh) {
+  const canvas = document.getElementById('speedGaugeCanvas');
   if (!canvas) return;
-
-  // Ensure canvas pixel size matches CSS size
   const rect = canvas.getBoundingClientRect();
-  const W = Math.max(rect.width || 280, 100);
-  const H = 52;
-  canvas.width  = W * devicePixelRatio;
-  canvas.height = H * devicePixelRatio;
-
+  const W = Math.max(rect.width || 260, 160);
+  const H = 150;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
   const ctx = canvas.getContext('2d');
-  ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
 
-  // Background
-  ctx.fillStyle = '#e8ecf0';
-  ctx.fillRect(0, 0, W, H);
+  const cx = W / 2;
+  const cy = H - 18;
+  const r  = Math.min(W / 2 - 14, H - 34);
 
-  const pts = speedHistory;
-  if (pts.length < 2) {
-    // placeholder text
-    ctx.fillStyle = '#6b7a8d';
-    ctx.font = `${10 * devicePixelRatio / devicePixelRatio}px IBM Plex Mono, monospace`;
-    ctx.textAlign = 'center';
-    ctx.fillText('Waiting for data…', W / 2, H / 2 + 4);
-    return;
+  const max = GAUGE_MAX_KMH;
+  const val = Math.max(0, Math.min(max, valueKmh));
+  const startA = Math.PI;        // left (0)
+  const endA   = 2 * Math.PI;    // right (max), sweeping through top
+
+  // Colour zones: green 0-40%, yellow 40-72%, red 72-100%
+  const zones = [
+    { from: 0,    to: 0.40, color: '#1a8c4e' },
+    { from: 0.40, to: 0.72, color: '#b8860b' },
+    { from: 0.72, to: 1.00, color: '#c0392b' }
+  ];
+  const trackW = Math.max(9, r * 0.16);
+  zones.forEach(z => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, startA + z.from * Math.PI, startA + z.to * Math.PI);
+    ctx.lineWidth = trackW;
+    ctx.strokeStyle = z.color;
+    ctx.globalAlpha = 0.85;
+    ctx.lineCap = 'butt';
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  // Tick marks + labels
+  const tickStep = 5; // km/h
+  ctx.fillStyle = '#6b7a8d';
+  ctx.font = `${Math.max(9, r*0.10)}px 'IBM Plex Mono', monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let v = 0; v <= max; v += tickStep) {
+    const a = startA + (v / max) * Math.PI;
+    const outerR = r + trackW/2 + 2;
+    const innerR = r - trackW/2 - 2;
+    const labelR = r - trackW/2 - 12;
+    ctx.beginPath();
+    ctx.moveTo(cx + innerR * Math.cos(a), cy + innerR * Math.sin(a));
+    ctx.lineTo(cx + outerR * Math.cos(a), cy + outerR * Math.sin(a));
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillText(String(v), cx + labelR * Math.cos(a), cy + labelR * Math.sin(a));
   }
 
-  const maxVal = Math.max(...pts, 0.5);
-  const padT = 6, padB = 6, padL = 4, padR = 4;
-  const gW = W - padL - padR;
-  const gH = H - padT - padB;
-
-  // Grid line at midpoint
-  const midY = padT + gH / 2;
+  // Needle
+  const needleA = startA + (val / max) * Math.PI;
+  const needleLen = r - trackW/2 - 14;
   ctx.beginPath();
-  ctx.moveTo(padL, midY);
-  ctx.lineTo(W - padR, midY);
-  ctx.strokeStyle = 'rgba(0,0,0,0.07)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Gradient fill
-  const grad = ctx.createLinearGradient(0, padT, 0, padT + gH);
-  grad.addColorStop(0, 'rgba(10,110,191,0.35)');
-  grad.addColorStop(1, 'rgba(10,110,191,0.03)');
-
-  const xStep = gW / (SPEED_MAX_PTS - 1);
-
-  // Build path
-  ctx.beginPath();
-  pts.forEach((v, i) => {
-    const x = padL + i * xStep;
-    const y = padT + gH - (v / maxVal) * gH;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-
-  // Fill area
-  const lastX = padL + (pts.length - 1) * xStep;
-  ctx.lineTo(lastX, padT + gH);
-  ctx.lineTo(padL, padT + gH);
+  ctx.moveTo(cx - 5*Math.cos(needleA - Math.PI/2), cy - 5*Math.sin(needleA - Math.PI/2));
+  ctx.lineTo(cx + needleLen * Math.cos(needleA), cy + needleLen * Math.sin(needleA));
+  ctx.lineTo(cx - 5*Math.cos(needleA + Math.PI/2), cy - 5*Math.sin(needleA + Math.PI/2));
   ctx.closePath();
-  ctx.fillStyle = grad;
+  ctx.fillStyle = '#1a2332';
   ctx.fill();
 
-  // Stroke line
+  // Hub
   ctx.beginPath();
-  pts.forEach((v, i) => {
-    const x = padL + i * xStep;
-    const y = padT + gH - (v / maxVal) * gH;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.strokeStyle = '#0a6ebf';
-  ctx.lineWidth = 1.8;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
+  ctx.arc(cx, cy, 6, 0, Math.PI*2);
+  ctx.fillStyle = '#1a2332';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI*2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
 
-  // Dot at last point
-  const lx = padL + (pts.length - 1) * xStep;
-  const lv = pts[pts.length - 1];
-  const ly = padT + gH - (lv / maxVal) * gH;
-  ctx.beginPath();
-  ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+  // Digital readout
+  ctx.font = `700 ${Math.max(15, r*0.24)}px 'IBM Plex Mono', monospace`;
   ctx.fillStyle = '#0a6ebf';
-  ctx.fill();
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 1.2;
-  ctx.stroke();
-
-  // Range label update
-  document.getElementById('d-speedRange').textContent =
-    `${pts.length}s · max ${maxVal.toFixed(2)} r/s`;
+  ctx.textAlign = 'center';
+  ctx.fillText(val.toFixed(1), cx, cy - r*0.42);
+  ctx.font = `${Math.max(8, r*0.10)}px 'IBM Plex Mono', monospace`;
+  ctx.fillStyle = '#6b7a8d';
+  ctx.fillText('km/h', cx, cy - r*0.42 + Math.max(15, r*0.24)*0.72);
 }
 
-// Init graph on page load with demo idle line
-window.addEventListener('load', () => { drawSpeedGraph(); });
+window.addEventListener('load', () => drawSpeedGauge(0));
+window.addEventListener('resize', () => drawSpeedGauge(smoothedKmh));
 
 // Watermark image (ScopX logo) as SVG data URI
 const WM_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
@@ -955,8 +956,9 @@ async function showDetail(key) {
   detailFrames  = { 0: null, 1: null, 2: null };
   detailHistory = [];
   detailPts     = [];
-  speedHistory  = [];
-  drawSpeedGraph();
+  lastGpsFix    = null;
+  smoothedKmh   = 0;
+  drawSpeedGauge(0);
 
  if (detailMap) { detailMap.remove(); detailMap = null; detailMarker = null; detailTrack = null; }
 // Give the DOM a tick to make #detailMap visible before Leaflet touches it
@@ -1074,9 +1076,6 @@ function applyReading(r) {
   setBar('d-ay', r.accel_y, -20, 20); setTxt('d-ayv', (+r.accel_y).toFixed(2));
   setBar('d-az', r.accel_z, -20, 20); setTxt('d-azv', (+r.accel_z).toFixed(2));
 
-  // Feed speed graph with gyro data
-  if (r.gyro_x != null) pushSpeedPoint(r.gyro_x, r.gyro_y, r.gyro_z);
-
   setTxt('d-soundbig',  r.sound);
   setTxt('d-sounddbsp', `~${db} dB`);
   document.getElementById('d-soundbar').style.width = soundPct + '%';
@@ -1093,6 +1092,8 @@ function applyReading(r) {
     setTxt('d-lat', lat.toFixed(5));
     setTxt('d-lng', lng.toFixed(5));
     updateDetailMap(lat, lng);
+    // Feed the speed gauge with real GPS-derived speed (km/h)
+    updateGpsSpeed(lat, lng, r.ts);
   }
 }
 
@@ -1211,6 +1212,55 @@ function logout() {
     .then(() => window.location.href = '/login.html');
 }
 
+async function boot() {
+  // Check auth first
+  const meRes = await fetch('/api/auth/me');
+  if (!meRes.ok) {
+    window.location.href = '/login.html';
+    return;
+  }
+  const user = await meRes.json();
+  window.currentUser = user;
+
+  // Show department name
+  const label = document.getElementById('userLabel');
+  if (label) label.textContent = user.name;
+
+  // Show PERSONNEL button only for admin
+  if (user.role === 'admin') {
+    const btn = document.getElementById('personnelBtn');
+    if (btn) btn.style.display = 'flex';
+  }
+
+  setConn('connecting');
+  await loadFleet();
+  setTimeout(() => { initFleetMap(); openFleetSse(); }, 0);
+}
+function attachmentViewerHtml(attachments) {
+  if (!attachments || !attachments.length) {
+    return `<div class="pm-att-none">No file attached</div>`;
+  }
+  return attachments.map(att => {
+    const isImage = /\.(jpg|jpeg|png|webp)$/i.test(att.photo) || (att.photoType && att.photoType.startsWith('image/'));
+    const thumb = isImage
+      ? `<img class="pm-att-thumb" src="${att.photo}" onclick="openLb('${att.photo}', false, event)"/>`
+      : `<a class="pm-att-doc" href="${att.photo}" target="_blank" onclick="event.stopPropagation()">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+           </svg>
+           <span>PDF</span>
+         </a>`;
+    return `
+      <div class="pm-att-item" style="display:flex;align-items:center;gap:14px;">
+        ${thumb}
+        <div class="pm-att-info">
+          <span class="pm-att-name">${att.photoName || 'Attachment'}</span>
+          <a class="pm-att-open" href="${att.photo}" target="_blank" onclick="event.stopPropagation()">Open full size ↗</a>
+        </div>
+      </div>`;
+  }).join('');
+}
+
 function openPersonnelModal() {
   const e = fleetData.find(e => e.device_key === currentKey);
   if (!e) return;
@@ -1219,6 +1269,7 @@ function openPersonnelModal() {
   const pol  = meta.police || {};
   const fr   = meta.forest || {};
   const mah  = meta.mahout || {};
+  const att = Array.isArray(meta.attachments) ? meta.attachments : [];
 
   // Header
   setTxt('pm-elname', e.name);
@@ -1242,6 +1293,10 @@ function openPersonnelModal() {
   setTxt('pm-mah-phone-txt', mah.phone   || '—');
   const mahA = document.getElementById('pm-mah-phone');
   if (mahA) mahA.href = mah.phone ? `tel:${mah.phone.replace(/\s/g,'')}` : '#';
+
+  // Attachment viewer
+  const attWrap = document.getElementById('pm-att-wrap');
+  if (attWrap) attWrap.innerHTML = attachmentViewerHtml(att);
 
   // Show empty state if nothing filled
   const hasData = pol.name || fr.name || mah.name;
@@ -1399,6 +1454,21 @@ function personnelEscHandler(e) {
               <span id="pm-mah-phone-txt">—</span>
             </a>
           </div>
+        </div>
+      </div>
+
+      <div style="height:1px;background:var(--border);"></div>
+
+      <!-- Attached Photo / Document -->
+      <div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:.42rem;
+                    letter-spacing:2px;text-transform:uppercase;font-weight:700;
+                    color:var(--dim);border-bottom:1.5px solid var(--border);
+                    padding-bottom:6px;margin-bottom:12px;">
+          ◈ Attached Photo / Document
+        </div>
+        <div id="pm-att-wrap" style="display:flex;flex-direction:column;gap:14px;">
+          <div class="pm-att-none">No file attached</div>
         </div>
       </div>
 
